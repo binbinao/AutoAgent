@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from autoagent.cli.display import execution_progress, make_react_step_printer, render_plan_tree
+from autoagent.cli.display import make_react_step_printer, render_plan_tree
+from autoagent.cli.run_flow import execute_approved_run
 from autoagent.config import AgentSettings, user_config_path
+from autoagent.dag.plan_mutator import ExtendNodesMutator
 from autoagent.executor import DAGExecutor
 from autoagent.llm import LiteLLMRouter, LLMPlanner
 from autoagent.memory import EpisodicMemory, create_semantic_memory, record_task_with_semantic
 from autoagent.models import AgentRun, NodeStatus, Plan, PlanNode, RunStatus
 from autoagent.orchestrator import HeuristicPlanner, ManualApprover, Orchestrator
 from autoagent.react import ReActAgent
-from autoagent.run_state import clear_run_state, load_run_state, save_run_state
+from autoagent.run_state import (
+    TERMINAL_RUN_STATUSES,
+    RunSnapshot,
+    load_run_snapshot,
+    save_run_snapshot,
+)
 from autoagent.tools import (
     ApiRequestTool,
     BrowserSnapshotTool,
@@ -85,10 +95,11 @@ def build_orchestrator(
             registry,
             react_agent=react_agent,
             on_react_step=on_step,
+            plan_mutator=ExtendNodesMutator(),
         )
     else:
         planner = HeuristicPlanner()
-        executor = DAGExecutor(registry)
+        executor = DAGExecutor(registry, plan_mutator=ExtendNodesMutator())
 
     return Orchestrator(
         planner=planner,
@@ -142,7 +153,7 @@ def _handle_interrupt(signum: int, frame: object | None) -> None:
     settings = _interrupt_state.get("settings")
     if run is not None and settings is not None:
         interrupted = run.with_update(status=RunStatus.FAILED)
-        save_run_state(settings.state_path, interrupted)
+        save_run_snapshot(settings.state_path, RunSnapshot(run=interrupted))
         record_task_with_semantic(
             settings,
             goal=run.goal,
@@ -170,11 +181,77 @@ def plan_cmd(
     console.print(f"Status: {agent_run.status.value}")
 
 
+def _spawn_detached_run(
+    goal: str,
+    *,
+    approve: bool,
+    llm: bool,
+    model: str | None,
+    settings: AgentSettings,
+) -> None:
+    settings.log_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, "-m", "autoagent.worker", "execute", goal]
+    if approve:
+        cmd.append("--approve")
+    if llm:
+        cmd.append("--llm")
+    if model:
+        cmd.extend(["--model", model])
+
+    with settings.log_path.open("w", encoding="utf-8") as log_file:
+        proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    placeholder = Plan(
+        goal=goal,
+        nodes=[
+            PlanNode(
+                id="pending",
+                description="Background worker starting…",
+                tool_name="echo",
+                tool_args={"goal": goal},
+            )
+        ],
+    )
+    snapshot = RunSnapshot(
+        run=AgentRun(goal=goal, plan=placeholder, status=RunStatus.RUNNING),
+        pid=proc.pid,
+        detached=True,
+        log_path=str(settings.log_path),
+    )
+    save_run_snapshot(settings.state_path, snapshot)
+    console.print(f"[green]Detached run started[/green] (pid={proc.pid})")
+    console.print(f"Log: {settings.log_path}")
+    console.print("Use [bold]autoagent status --watch[/bold] to follow progress.")
+
+
+def _render_snapshot(snapshot: RunSnapshot) -> None:
+    title = "Background run" if snapshot.detached else "Run state"
+    console.print(Panel(snapshot.run.goal, title=title, border_style="yellow"))
+    _display_plan(snapshot.run.plan)
+    console.print(f"Status: {snapshot.run.status.value}")
+    if snapshot.pid:
+        console.print(f"PID: {snapshot.pid}")
+    if snapshot.progress.messages:
+        console.print("[dim]Recent events:[/dim]")
+        for line in snapshot.progress.messages[-5:]:
+            console.print(f"  • {line}")
+    if snapshot.log_path:
+        console.print(f"Log: {snapshot.log_path}")
+
+
 @app.command()
 def run(
     goal: str,
     approve: bool = typer.Option(
         False, "--approve", "-y", help="Approve plan automatically and execute."
+    ),
+    detach: bool = typer.Option(
+        False, "--detach", "-d", help="Run in background; use autoagent status --watch."
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model override."),
     llm: bool = typer.Option(False, "--llm", help="Use LLM planner (requires an API key)."),
@@ -182,6 +259,14 @@ def run(
     """Plan and optionally execute a goal."""
     new_trace_id()
     settings = _resolve_settings(model)
+
+    if detach:
+        if not approve:
+            console.print("[yellow]Detached runs require --approve[/yellow]")
+            raise typer.Exit(1)
+        _spawn_detached_run(goal, approve=approve, llm=llm, model=model, settings=settings)
+        return
+
     orchestrator = build_orchestrator(settings, use_llm_planner=llm, console=console)
 
     console.print(Panel(goal, title="[bold]Goal[/bold]", border_style="cyan"))
@@ -205,34 +290,12 @@ def run(
         previous = signal.signal(signal.SIGINT, _handle_interrupt)
         try:
             console.print("[dim]Executing…[/dim]")
-            with execution_progress() as progress:
-                task_id = progress.add_task("DAG execution", total=len(agent_run.plan.nodes))
-                running = agent_run.with_update(status=RunStatus.RUNNING)
-                save_run_state(settings.state_path, running)
-                completed = orchestrator.execute(running, approved=True)
-                progress.update(task_id, completed=len(agent_run.plan.nodes))
-
-            clear_run_state(settings.state_path)
-            lesson = None
-            if completed.results:
-                last = completed.results[-1].tool_result
-                if last.ok and "answer" in last.output:
-                    lesson = str(last.output.get("answer", ""))[:500]
-
-            record_task_with_semantic(
+            execute_approved_run(
+                orchestrator,
+                agent_run,
                 settings,
-                goal=goal,
-                plan_summary=agent_run.plan.summary(),
-                outcome=completed.status.value,
-                lesson=lesson,
+                console=console,
             )
-
-            statuses = {
-                r.node_id: NodeStatus.COMPLETED if r.tool_result.ok else NodeStatus.FAILED
-                for r in completed.results
-            }
-            _display_plan(agent_run.plan, statuses=statuses)
-            console.print(f"Status: {completed.status.value}")
         except RunInterruptedError:
             raise typer.Exit(130) from None
         finally:
@@ -242,16 +305,26 @@ def run(
 
 
 @app.command()
-def status() -> None:
-    """Show saved state from an interrupted run."""
+def status(
+    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh until run completes."),
+    interval: float = typer.Option(1.0, "--interval", help="Refresh interval in seconds."),
+) -> None:
+    """Show saved or in-progress run state."""
     settings = _resolve_settings()
-    saved = load_run_state(settings.state_path)
-    if saved is None:
-        console.print("[dim]No saved run state.[/dim]")
-        return
-    console.print(Panel(saved.goal, title="Interrupted run", border_style="yellow"))
-    _display_plan(saved.plan)
-    console.print(f"Status: {saved.status.value}")
+
+    while True:
+        snapshot = load_run_snapshot(settings.state_path)
+        if snapshot is None:
+            console.print("[dim]No saved run state.[/dim]")
+            return
+
+        if watch:
+            console.clear()
+        _render_snapshot(snapshot)
+
+        if not watch or snapshot.run.status in TERMINAL_RUN_STATUSES:
+            break
+        time.sleep(interval)
 
 
 @app.command()
