@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from litellm import completion
 
 from autoagent.memory import SemanticMemory
 from autoagent.models import Plan
+
+_dotenv_loaded = False
+
+
+def _ensure_dotenv() -> None:
+    global _dotenv_loaded
+    if not _dotenv_loaded:
+        load_dotenv(Path.cwd() / ".env", override=False)
+        _dotenv_loaded = True
 
 
 class LiteLLMRouter:
@@ -15,6 +26,7 @@ class LiteLLMRouter:
         self.default_model = default_model
 
     def complete(self, messages: list[dict[str, str]], *, model: str | None = None) -> str:
+        _ensure_dotenv()
         response = completion(model=model or self.default_model, messages=messages)
         content = response.choices[0].message.content
         if content is None:

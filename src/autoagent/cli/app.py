@@ -410,7 +410,7 @@ def _config_init_wizard() -> None:
         f"auto_approve = {'true' if auto else 'false'}",
         f"use_docker_sandbox = {'true' if docker else 'false'}",
         "",
-        "# Set API keys via environment, e.g. OPENAI_API_KEY or in .env",
+        "# Set API keys in .env (see .env.example for OpenAI-compatible gateways)",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     console.print(f"[green]Wrote {path}[/green]")
