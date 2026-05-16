@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from typing import Any
@@ -18,6 +19,9 @@ class BaseTool(ABC):
     @abstractmethod
     def run(self, args: dict[str, Any]) -> ToolResult:
         raise NotImplementedError
+
+    async def run_async(self, args: dict[str, Any]) -> ToolResult:
+        return await asyncio.to_thread(self.run, args)
 
 
 class ToolRegistry:
@@ -41,6 +45,12 @@ class ToolRegistry:
         if tool is None:
             raise ToolExecutionError(f"Unknown tool: {name}")
         return tool.run(args)
+
+    async def run_async(self, name: str, args: dict[str, Any]) -> ToolResult:
+        tool = self._tools.get(name)
+        if tool is None:
+            raise ToolExecutionError(f"Unknown tool: {name}")
+        return await tool.run_async(args)
 
     @property
     def names(self) -> list[str]:

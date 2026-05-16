@@ -20,6 +20,27 @@ class ApiRequestTool(BaseTool):
         self.allow_private_hosts = allow_private_hosts
 
     def run(self, args: dict[str, Any]) -> ToolResult:
+        method, url, headers, json_body = self._parse_args(args)
+        try:
+            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                response = client.request(method, url, headers=headers, json=json_body)
+        except httpx.HTTPError as exc:
+            raise ToolExecutionError(f"API request failed: {url}") from exc
+        return self._result_from_response(response)
+
+    async def run_async(self, args: dict[str, Any]) -> ToolResult:
+        method, url, headers, json_body = self._parse_args(args)
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+            ) as client:
+                response = await client.request(method, url, headers=headers, json=json_body)
+        except httpx.HTTPError as exc:
+            raise ToolExecutionError(f"API request failed: {url}") from exc
+        return self._result_from_response(response)
+
+    def _parse_args(self, args: dict[str, Any]) -> tuple[str, str, dict[str, str], Any]:
         method = str(args.get("method", "GET")).upper()
         url = str(args.get("url", ""))
         headers = dict(args.get("headers", {}))
@@ -30,13 +51,9 @@ class ApiRequestTool(BaseTool):
         if not url:
             raise ToolExecutionError("Missing required argument: url")
         self._validate_url(url)
+        return method, url, headers, json_body
 
-        try:
-            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=False) as client:
-                response = client.request(method, url, headers=headers, json=json_body)
-        except httpx.HTTPError as exc:
-            raise ToolExecutionError(f"API request failed: {url}") from exc
-
+    def _result_from_response(self, response: httpx.Response) -> ToolResult:
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
             body: Any = response.json()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -37,10 +38,10 @@ def load_run_snapshot(path: Path) -> RunSnapshot | None:
     path = path.expanduser()
     if not path.is_file():
         return None
-    raw = path.read_text(encoding="utf-8")
-    if '"run"' in raw[:200]:
-        return RunSnapshot.model_validate_json(raw)
-    run = AgentRun.model_validate_json(raw)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and "run" in data:
+        return RunSnapshot.model_validate(data)
+    run = AgentRun.model_validate(data)
     return RunSnapshot(run=run)
 
 
