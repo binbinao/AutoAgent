@@ -236,7 +236,7 @@ def test_cli_config_init_writes_user_toml(tmp_path: Path, monkeypatch: Any) -> N
 
 def test_cli_status_shows_saved_run(tmp_path: Path, monkeypatch: Any) -> None:
     from autoagent.models import AgentRun, Plan, PlanNode
-    from autoagent.run_state import save_run_state
+    from autoagent.run_state import RunSnapshot, save_run_snapshot
 
     state_path = tmp_path / "run_state.json"
     monkeypatch.setenv("AUTOAGENT_STATE_PATH", str(state_path))
@@ -244,13 +244,42 @@ def test_cli_status_shows_saved_run(tmp_path: Path, monkeypatch: Any) -> None:
         goal="saved",
         nodes=[PlanNode(id="a", description="A", tool_name="echo")],
     )
-    save_run_state(state_path, AgentRun(goal="saved", plan=plan, status=RunStatus.FAILED))
+    save_run_snapshot(
+        state_path,
+        RunSnapshot(run=AgentRun(goal="saved", plan=plan, status=RunStatus.FAILED)),
+    )
 
     runner = CliRunner()
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
     assert "saved" in result.output
+
+
+def test_cli_run_detach_spawns_worker(tmp_path: Path, monkeypatch: Any) -> None:
+    import autoagent.cli.app as cli_app
+
+    spawned: list[list[str]] = []
+
+    class FakeProc:
+        pid = 4242
+
+    def fake_popen(cmd: list[str], **kwargs: object) -> FakeProc:
+        del kwargs
+        spawned.append(cmd)
+        return FakeProc()
+
+    monkeypatch.setattr(cli_app.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("AUTOAGENT_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("AUTOAGENT_LOG_PATH", str(tmp_path / "run.log"))
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "bg task", "--approve", "--detach"])
+
+    assert result.exit_code == 0
+    assert spawned
+    assert "autoagent.worker" in " ".join(spawned[0])
+    assert "4242" in result.output
 
 
 def test_build_orchestrator_with_llm_includes_react_agent(tmp_path: Path) -> None:

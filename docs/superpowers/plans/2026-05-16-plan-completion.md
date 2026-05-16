@@ -21,9 +21,16 @@
 - [x] Rich Tree plan view, progress bar, Ctrl+C state save, `autoagent status`
 - [x] CLI package split: `autoagent/cli/app.py`
 
+## Batch 2 (2026-05-16 continued)
+
+- [x] `RunSnapshot` + progress messages during execution
+- [x] `autoagent run --detach` + `python -m autoagent.worker`
+- [x] `autoagent status --watch`
+- [x] Dynamic DAG via `ExtendNodesMutator` (`extend_nodes` in tool output)
+- [x] `ApiRequestTool.run_async` + registry `run_async`
+
 ## Deferred (future)
 
 - [ ] Full package restructure per plan §6 (`core/`, `agent/`, …)
 - [ ] Web UI
-- [ ] True background daemon + reconnect streaming
-- [ ] httpx async tool rewrite
+- [ ] Full async tool suite + streaming ReAct display
