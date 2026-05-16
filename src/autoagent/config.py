@@ -70,3 +70,4 @@ class AgentSettings(BaseSettings):
     max_context_tokens: int = 8192
     use_docker_sandbox: bool = True
     state_path: Path = Field(default_factory=lambda: Path.home() / ".autoagent" / "run_state.json")
+    log_path: Path = Field(default_factory=lambda: Path.home() / ".autoagent" / "run.log")
