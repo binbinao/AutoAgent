@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from autoagent.dag.plan_mutator import ExtendNodesMutator
 from autoagent.executor import DAGExecutor
 from autoagent.models import NodeExecutionResult, Plan, PlanNode, ToolResult
 from autoagent.tools import EchoTool, ToolRegistry
-from autoagent.tools.base import BaseTool, ToolExecutionError
+from autoagent.tools.base import BaseTool
 
 
 class ExtendEchoTool(BaseTool):
@@ -37,9 +35,10 @@ def test_extend_nodes_mutator_adds_nodes_from_tool_output() -> None:
         goal="g",
         nodes=[PlanNode(id="root", description="root", tool_name="extend_echo")],
     )
+    extend_spec = [{"id": "n2", "description": "d", "tool_name": "echo"}]
     result = NodeExecutionResult(
         node_id="root",
-        tool_result=ToolResult(ok=True, output={"extend_nodes": [{"id": "n2", "description": "d", "tool_name": "echo"}]}),
+        tool_result=ToolResult(ok=True, output={"extend_nodes": extend_spec}),
     )
 
     extended = mutator.apply(plan, result)
@@ -53,7 +52,14 @@ def test_executor_applies_mutator_during_run() -> None:
     executor = DAGExecutor(registry, plan_mutator=ExtendNodesMutator())
     plan = Plan(
         goal="dynamic",
-        nodes=[PlanNode(id="root", description="r", tool_name="extend_echo", tool_args={"text": "x"})],
+        nodes=[
+            PlanNode(
+                id="root",
+                description="r",
+                tool_name="extend_echo",
+                tool_args={"text": "x"},
+            )
+        ],
     )
 
     results = executor.execute(plan)

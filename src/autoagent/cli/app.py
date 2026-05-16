@@ -190,7 +190,7 @@ def _spawn_detached_run(
     settings: AgentSettings,
 ) -> None:
     settings.log_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "autoagent.worker", "execute", goal]
+    cmd = [sys.executable, "-m", "autoagent.worker", goal]
     if approve:
         cmd.append("--approve")
     if llm:

@@ -257,8 +257,9 @@ def test_cli_status_shows_saved_run(tmp_path: Path, monkeypatch: Any) -> None:
 
 
 def test_cli_run_detach_spawns_worker(tmp_path: Path, monkeypatch: Any) -> None:
-    import autoagent.cli.app as cli_app
+    import importlib
 
+    cli_module = importlib.import_module("autoagent.cli.app")
     spawned: list[list[str]] = []
 
     class FakeProc:
@@ -269,7 +270,7 @@ def test_cli_run_detach_spawns_worker(tmp_path: Path, monkeypatch: Any) -> None:
         spawned.append(cmd)
         return FakeProc()
 
-    monkeypatch.setattr(cli_app.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
     monkeypatch.setenv("AUTOAGENT_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("AUTOAGENT_LOG_PATH", str(tmp_path / "run.log"))
 
@@ -278,7 +279,8 @@ def test_cli_run_detach_spawns_worker(tmp_path: Path, monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert spawned
-    assert "autoagent.worker" in " ".join(spawned[0])
+    assert "autoagent.worker" in spawned[0]
+    assert "bg task" in spawned[0]
     assert "4242" in result.output
 
 

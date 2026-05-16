@@ -2,28 +2,27 @@
 
 from __future__ import annotations
 
-import sys
-
 import typer
+from rich.console import Console
 
-from autoagent.cli.app import build_orchestrator, _resolve_settings
+from autoagent.cli.app import _resolve_settings, build_orchestrator
 from autoagent.cli.run_flow import execute_approved_run
 from autoagent.models import RunStatus
 from autoagent.run_state import RunSnapshot, save_run_snapshot
 from autoagent.utils.logging import configure_logging, new_trace_id
-from rich.console import Console
 
-worker_app = typer.Typer(help="AutoAgent background worker.", add_completion=False)
+app = typer.Typer(help="AutoAgent background worker.", add_completion=False)
 _console = Console(stderr=True)
 
 
-@worker_app.command()
-def execute(
+@app.command()
+def main(
     goal: str,
     approve: bool = typer.Option(True, "--approve", "-y"),
     model: str | None = typer.Option(None, "--model", "-m"),
     llm: bool = typer.Option(False, "--llm"),
 ) -> None:
+    """Plan and execute *goal* (used by ``autoagent run --detach``)."""
     new_trace_id()
     settings = _resolve_settings(model)
     configure_logging(settings.log_level)
@@ -62,9 +61,5 @@ def execute(
         raise
 
 
-def main() -> None:
-    worker_app()
-
-
 if __name__ == "__main__":
-    main()
+    app()

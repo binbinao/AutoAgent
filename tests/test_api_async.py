@@ -49,8 +49,6 @@ async def test_api_request_tool_run_async(monkeypatch: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_registry_run_async_delegates_to_tool() -> None:
-    tool = ApiRequestTool()
-
     class StubApi(ApiRequestTool):
         async def run_async(self, args: dict[str, Any]) -> Any:
             from autoagent.models import ToolResult

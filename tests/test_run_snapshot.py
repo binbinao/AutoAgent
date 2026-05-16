@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from autoagent.models import AgentRun, Plan, PlanNode, RunStatus
-from autoagent.run_state import RunProgress, RunSnapshot, clear_run_snapshot, load_run_snapshot, save_run_snapshot
+from autoagent.run_state import (
+    RunProgress,
+    RunSnapshot,
+    clear_run_snapshot,
+    load_run_snapshot,
+    save_run_snapshot,
+)
 
 
 def test_run_snapshot_round_trip(tmp_path: Path) -> None:

@@ -63,6 +63,7 @@ uv sync --extra vector
 ```
 选项:
   --approve / -y     自动审批，无需交互确认
+  --detach / -d      后台执行（需配合 --approve；用 status --watch 查看）
   --llm              使用 LLM 规划器（需要 API Key）
   --model / -m TEXT  指定 LLM 模型，覆盖默认配置
 ```
@@ -100,7 +101,19 @@ autoagent config --init   # 交互式向导，写入 ~/.autoagent/config.toml
 
 ### `autoagent status`
 
-查看因 Ctrl+C 中断而保存的运行状态（`~/.autoagent/run_state.json`）。
+查看进行中或中断的运行状态（`~/.autoagent/run_state.json`）。
+
+```bash
+autoagent status --watch    # 实时刷新（后台 --detach 任务）
+```
+
+### 动态扩展 DAG
+
+工具可在输出中加入 `extend_nodes` 列表，执行器会自动把新节点并入 DAG（依赖当前节点）：
+
+```json
+{"extend_nodes": [{"id": "follow_up", "description": "…", "tool_name": "echo", "tool_args": {}}]}
+```
 
 ## 配置
 
