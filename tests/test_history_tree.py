@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from autoagent.history_tree import build_history_tree
+from autoagent.history_tree import build_history_tree, resolve_task_reports
 from autoagent.memory import EpisodicMemory, record_run_history
 from autoagent.models import (
     AgentRun,
@@ -64,10 +64,14 @@ def test_record_run_history_creates_root_and_children(tmp_path: Path) -> None:
         memory.close()
 
 
-def test_build_history_tree_groups_children_under_root() -> None:
+def test_build_history_tree_groups_children_under_root(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 
     from autoagent.memory import EpisodicTask
+
+    reports_dir = tmp_path / ".autoagent" / "reports"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "a.md").write_text("# a", encoding="utf-8")
 
     created = datetime.now(UTC)
     root = EpisodicTask(
@@ -88,12 +92,36 @@ def test_build_history_tree_groups_children_under_root() -> None:
         parent_task_id="r1",
         node_id="n1",
     )
-    tree = build_history_tree([root, child])
+    tree = build_history_tree([root, child], workspace=tmp_path)
     assert len(tree) == 1
     assert tree[0]["id"] == "r1"
     assert tree[0]["reports"][0]["name"] == "a.md"
     assert len(tree[0]["children"]) == 1
     assert tree[0]["children"][0]["id"] == "c1"
+
+
+def test_resolve_task_reports_backfills_by_run_id(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from autoagent.memory import EpisodicTask
+
+    run_id = "abcdef12-0000-0000-0000-000000000000"
+    reports_dir = tmp_path / ".autoagent" / "reports"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / f"goal-{run_id[:8]}.md").write_text("# report", encoding="utf-8")
+
+    task = EpisodicTask(
+        id="r1",
+        goal="goal",
+        plan_summary="p",
+        outcome="completed",
+        created_at=datetime.now(UTC),
+        run_id=run_id,
+        report_paths=(),
+    )
+    paths = resolve_task_reports(task, tmp_path)
+    assert len(paths) == 1
+    assert paths[0].endswith(f"-{run_id[:8]}.md")
 
 
 def test_episodic_memory_migrates_legacy_schema(tmp_path: Path) -> None:
