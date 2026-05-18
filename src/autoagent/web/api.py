@@ -20,6 +20,7 @@ class RunCreateRequest(BaseModel):
     llm: bool = True
     approve: bool = True
     task_mode: str | None = None
+    locale: str | None = "en"
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -104,6 +105,7 @@ def create_app(settings: AgentSettings | None = None) -> FastAPI:
                 llm=body.llm,
                 approve=body.approve,
                 task_mode=body.task_mode,
+                locale=body.locale,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

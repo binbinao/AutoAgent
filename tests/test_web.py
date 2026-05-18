@@ -88,6 +88,34 @@ def test_create_run_heuristic(client: TestClient) -> None:
     data = res.json()
     assert data["goal"] == "echo hello"
     assert data["id"]
+    assert data["locale"] == "en"
+
+
+def test_create_run_stores_locale(client: TestClient) -> None:
+    res = client.post(
+        "/api/runs",
+        json={
+            "goal": "echo hello",
+            "llm": False,
+            "approve": True,
+            "locale": "zh",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["locale"] == "zh"
+
+
+def test_create_run_rejects_unknown_locale(client: TestClient) -> None:
+    res = client.post(
+        "/api/runs",
+        json={
+            "goal": "echo hello",
+            "llm": False,
+            "approve": True,
+            "locale": "fr",
+        },
+    )
+    assert res.status_code == 400
 
 
 def test_list_reports_returns_list(client: TestClient) -> None:

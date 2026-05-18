@@ -19,6 +19,7 @@ from autoagent.config import (
 )
 from autoagent.memory import EpisodicMemory
 from autoagent.models import AgentRun, Plan, RunStatus
+from autoagent.output_locale import parse_output_locale
 from autoagent.report import _DEFAULT_REPORT_DIR, ensure_run_report
 from autoagent.run_state import RunProgress
 from autoagent.task_mode import TaskMode, parse_task_mode
@@ -115,6 +116,7 @@ class RunService:
         llm: bool,
         approve: bool,
         task_mode: str | None = None,
+        locale: str | None = "en",
     ) -> WebRunRecord:
         goal = goal.strip()
         if not goal:
@@ -124,6 +126,10 @@ class RunService:
             mode = parse_task_mode(task_mode or self.settings.default_task_mode)
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
+        try:
+            output_locale = parse_output_locale(locale)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
         new_trace_id()
         orchestrator, report_router = build_orchestrator(
@@ -131,6 +137,7 @@ class RunService:
             use_llm_planner=llm,
             console=None,
             task_mode=mode,
+            output_locale=output_locale,
         )
         agent_run = orchestrator.plan(goal)
         record = WebRunRecord(
@@ -139,6 +146,7 @@ class RunService:
             status=agent_run_status(agent_run),
             plan=plan_to_dict(agent_run.plan),
             task_mode=mode.value,
+            locale=output_locale.value,
         )
         self.store.put(record)
 
@@ -161,11 +169,13 @@ class RunService:
             raise ValueError(f"Run {run_id} is not awaiting approval")
 
         mode = _resolve_task_mode(record.task_mode, self.settings)
+        output_locale = parse_output_locale(record.locale)
         orchestrator, report_router = build_orchestrator(
             self.settings,
             use_llm_planner=True,
             console=None,
             task_mode=mode,
+            output_locale=output_locale,
         )
         if record.plan is None:
             raise ValueError("Run has no plan to execute")

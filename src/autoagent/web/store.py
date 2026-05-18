@@ -18,6 +18,7 @@ class WebRunRecord:
     report_name: str | None = None
     error: str | None = None
     task_mode: str = "research"
+    locale: str = "en"
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
@@ -33,6 +34,7 @@ class WebRunRecord:
             "report_name": self.report_name,
             "error": self.error,
             "task_mode": self.task_mode,
+            "locale": self.locale,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

@@ -10,6 +10,7 @@ from litellm import completion
 
 from autoagent.memory import SemanticMemory
 from autoagent.models import Plan
+from autoagent.output_locale import OutputLocale
 from autoagent.plan_enrichment import enrich_plan_data
 from autoagent.prompts import planner_system_prompt
 from autoagent.task_mode import TaskMode
@@ -71,11 +72,13 @@ class LLMPlanner:
         model: str | None = None,
         semantic: SemanticMemory | None = None,
         task_mode: TaskMode = TaskMode.RESEARCH,
+        output_locale: OutputLocale = OutputLocale.EN,
     ) -> None:
         self.router = router
         self.model = model
         self.semantic = semantic
         self.task_mode = task_mode
+        self.output_locale = output_locale
 
     def create_plan(self, goal: str, *, task_mode: TaskMode | None = None) -> Plan:
         context_lines: list[str] = []
@@ -90,7 +93,10 @@ class LLMPlanner:
 
         content = self.router.complete(
             [
-                {"role": "system", "content": planner_system_prompt(mode)},
+                {
+                    "role": "system",
+                    "content": planner_system_prompt(mode, locale=self.output_locale),
+                },
                 {"role": "user", "content": user_content},
             ],
             model=self.model,
