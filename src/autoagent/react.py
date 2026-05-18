@@ -9,23 +9,9 @@ from typing import Any
 from autoagent.llm import LiteLLMRouter
 from autoagent.memory import WorkingMemory
 from autoagent.models import ToolResult
+from autoagent.prompts import REACT_SYSTEM_PROMPT
 from autoagent.tools.base import ToolExecutionError, ToolRegistry
 from autoagent.utils.tokens import fits_in_context, truncate_to_tokens
-
-_SYSTEM_PROMPT = """\
-You are an autonomous agent. Think step by step.
-
-Available tools:
-{tools}
-
-{memory_context}
-
-To call a tool, output a JSON block (and nothing else on that line):
-{{"action": {{"tool": "<tool_name>", "args": {{...}}}}}}
-
-When the task is complete, write your final answer as plain text WITHOUT an \
-action block.
-"""
 
 ReActStepCallback = Callable[[str, str, str], None]
 
@@ -62,7 +48,7 @@ class ReActAgent:
         memory_block = memory_context.strip()
         if memory_block:
             memory_block = f"Relevant context from memory:\n{memory_block}\n"
-        system = _SYSTEM_PROMPT.format(tools=tools_desc, memory_context=memory_block)
+        system = REACT_SYSTEM_PROMPT.format(tools=tools_desc, memory_context=memory_block)
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system},
             {"role": "user", "content": task},

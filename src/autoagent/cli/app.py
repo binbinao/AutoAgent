@@ -20,6 +20,7 @@ from autoagent.memory import EpisodicMemory, create_semantic_memory, record_task
 from autoagent.models import AgentRun, NodeStatus, Plan, PlanNode, RunStatus
 from autoagent.orchestrator import HeuristicPlanner, ManualApprover, Orchestrator
 from autoagent.react import ReActAgent
+from autoagent.report import make_report_synthesizer
 from autoagent.run_state import (
     TERMINAL_RUN_STATUSES,
     RunSnapshot,
@@ -75,10 +76,11 @@ def build_orchestrator(
     *,
     use_llm_planner: bool = False,
     console: Console | None = None,
-) -> Orchestrator:
+) -> tuple[Orchestrator, LiteLLMRouter | None]:
     registry = build_registry(settings.workspace, settings)
     react_agent: ReActAgent | None = None
     planner: HeuristicPlanner | LLMPlanner
+    router: LiteLLMRouter | None = None
 
     if use_llm_planner:
         router = LiteLLMRouter(settings.default_model)
@@ -89,6 +91,7 @@ def build_orchestrator(
             router,
             registry,
             max_steps=settings.react_max_steps,
+            model=settings.default_model,
             max_context_tokens=settings.max_context_tokens,
         )
         executor = DAGExecutor(
@@ -96,16 +99,23 @@ def build_orchestrator(
             react_agent=react_agent,
             on_react_step=on_step,
             plan_mutator=ExtendNodesMutator(),
+            report_synthesizer=make_report_synthesizer(router),
+            workspace=settings.workspace,
         )
     else:
         planner = HeuristicPlanner()
-        executor = DAGExecutor(registry, plan_mutator=ExtendNodesMutator())
+        executor = DAGExecutor(
+            registry,
+            plan_mutator=ExtendNodesMutator(),
+            workspace=settings.workspace,
+        )
 
-    return Orchestrator(
+    orchestrator = Orchestrator(
         planner=planner,
         approver=ManualApprover(auto_approve=settings.auto_approve),
         executor=executor,
     )
+    return orchestrator, router
 
 
 def _display_plan(plan: Plan, statuses: dict[str, NodeStatus] | None = None) -> None:
@@ -176,7 +186,8 @@ def plan_cmd(
     """Create a plan without executing it."""
     new_trace_id()
     settings = _resolve_settings(model)
-    agent_run = build_orchestrator(settings, use_llm_planner=llm, console=console).plan(goal)
+    orchestrator, _ = build_orchestrator(settings, use_llm_planner=llm, console=console)
+    agent_run = orchestrator.plan(goal)
     _display_plan(agent_run.plan)
     console.print(f"Status: {agent_run.status.value}")
 
@@ -267,7 +278,7 @@ def run(
         _spawn_detached_run(goal, approve=approve, llm=llm, model=model, settings=settings)
         return
 
-    orchestrator = build_orchestrator(settings, use_llm_planner=llm, console=console)
+    orchestrator, report_router = build_orchestrator(settings, use_llm_planner=llm, console=console)
 
     console.print(Panel(goal, title="[bold]Goal[/bold]", border_style="cyan"))
     console.print("[dim]Planning…[/dim]")
@@ -295,6 +306,7 @@ def run(
                 agent_run,
                 settings,
                 console=console,
+                report_router=report_router,
             )
         except RunInterruptedError:
             raise typer.Exit(130) from None
@@ -415,3 +427,24 @@ def _config_init_wizard() -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     console.print(f"[green]Wrote {path}[/green]")
     console.print("[dim]Restart the shell or run commands to pick up changes.[/dim]")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    port: int = typer.Option(8765, "--port", "-p", help="HTTP port."),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev)."),
+) -> None:
+    """Start the lightweight web UI (requires ``uv sync --extra web``)."""
+    try:
+        import uvicorn
+    except ImportError as exc:
+        console.print("[red]Web UI requires optional dependencies.[/red]")
+        console.print("Install with: [bold]uv sync --extra web[/bold]")
+        raise typer.Exit(1) from exc
+
+    from autoagent.web.api import create_app
+
+    configure_logging(AgentSettings().log_level)
+    console.print(f"[green]AutoAgent UI[/green] → http://{host}:{port}")
+    uvicorn.run(create_app(), host=host, port=port, reload=reload)

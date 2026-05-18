@@ -10,8 +10,35 @@ from litellm import completion
 
 from autoagent.memory import SemanticMemory
 from autoagent.models import Plan
+from autoagent.plan_enrichment import enrich_plan_data
+from autoagent.prompts import PLANNER_SYSTEM_PROMPT
 
 _dotenv_loaded = False
+
+
+def resolve_litellm_model(requested: str | None, default_model: str) -> str:
+    """Pick the LiteLLM model id to call.
+
+    Planner JSON may set bare names like ``gpt-4``; those lack a provider prefix and
+    are ignored in favor of ``default_model``.
+    """
+    if not requested:
+        return default_model
+    if "/" not in requested:
+        return default_model
+    return requested
+
+
+def _coerce_plan_node_models(data: dict[str, Any], default_model: str) -> None:
+    """Drop per-node model overrides that do not match the configured default."""
+    nodes = data.get("nodes")
+    if not isinstance(nodes, list):
+        return
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("model") not in (None, default_model):
+            node["model"] = None
 
 
 def _ensure_dotenv() -> None:
@@ -27,7 +54,8 @@ class LiteLLMRouter:
 
     def complete(self, messages: list[dict[str, str]], *, model: str | None = None) -> str:
         _ensure_dotenv()
-        response = completion(model=model or self.default_model, messages=messages)
+        resolved = resolve_litellm_model(model, self.default_model)
+        response = completion(model=resolved, messages=messages)
         content = response.choices[0].message.content
         if content is None:
             return ""
@@ -56,25 +84,17 @@ class LLMPlanner:
             joined = "\n".join(f"- {line}" for line in context_lines)
             user_content = f"{goal}\n\nRelevant knowledge from past tasks:\n{joined}"
 
-        prompt = (
-            "Create a JSON execution plan for the goal. "
-            "Return only JSON with shape: "
-            '{"goal": str, "nodes": [{"id": str, "description": str, '
-            '"tool_name": str|null, "tool_args": object, "dependencies": [str], '
-            '"model": str|null}]}. '
-            "Use tool_name null for steps that need multi-tool reasoning (ReAct). "
-            "Available tools: echo, web.search, web.fetch, file.read, file.write, "
-            "file.list, python.run, api.request, browser.snapshot."
-        )
         content = self.router.complete(
             [
-                {"role": "system", "content": prompt},
+                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             model=self.model,
         )
         data: dict[str, Any] = json.loads(_extract_json(content))
         data.setdefault("goal", goal)
+        _coerce_plan_node_models(data, self.router.default_model)
+        enrich_plan_data(data, goal)
         return Plan.model_validate(data)
 
 

@@ -26,7 +26,7 @@ def main(
     new_trace_id()
     settings = _resolve_settings(model)
     configure_logging(settings.log_level)
-    orchestrator = build_orchestrator(settings, use_llm_planner=llm, console=None)
+    orchestrator, report_router = build_orchestrator(settings, use_llm_planner=llm, console=None)
 
     agent_run = orchestrator.plan(goal)
     if agent_run.status is RunStatus.AWAITING_APPROVAL and not approve:
@@ -51,6 +51,7 @@ def main(
             settings,
             console=_console,
             snapshot=snapshot,
+            report_router=report_router,
         )
     except Exception:
         failed = agent_run.with_update(status=RunStatus.FAILED)

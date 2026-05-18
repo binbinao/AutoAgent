@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from autoagent.cli import app, build_orchestrator, build_registry
 from autoagent.config import AgentSettings
-from autoagent.llm import LiteLLMRouter, LLMPlanner
+from autoagent.llm import LiteLLMRouter, LLMPlanner, resolve_litellm_model
 from autoagent.memory import EpisodicMemory, InMemorySemanticMemory
 from autoagent.models import RunStatus
 
@@ -37,6 +37,47 @@ class FakeChoice:
 
 class FakeCompletionResponse:
     choices = [FakeChoice()]
+
+
+def test_resolve_litellm_model_ignores_bare_planner_names() -> None:
+    default = "openai/deepseek-v4-flash"
+    assert resolve_litellm_model(None, default) == default
+    assert resolve_litellm_model("gpt-4", default) == default
+    assert resolve_litellm_model("openai/gpt-4", default) == "openai/gpt-4"
+
+
+def test_planner_strips_mismatched_node_models(monkeypatch: Any) -> None:
+    import autoagent.llm as llm_module
+
+    payload = {
+        "goal": "g",
+        "nodes": [
+            {
+                "id": "react_step",
+                "description": "think",
+                "tool_name": None,
+                "tool_args": {},
+                "dependencies": [],
+                "model": "gpt-4",
+            }
+        ],
+    }
+
+    class _Msg:
+        content = json.dumps(payload)
+
+    class _Choice:
+        message = _Msg()
+
+    monkeypatch.setattr(
+        llm_module,
+        "completion",
+        lambda **kwargs: type("R", (), {"choices": [_Choice()]})(),
+    )
+
+    router = LiteLLMRouter("openai/deepseek-v4-flash")
+    plan = LLMPlanner(router).create_plan("g")
+    assert plan.nodes[0].model is None
 
 
 def test_litellm_router_and_planner(monkeypatch: Any) -> None:
@@ -83,7 +124,8 @@ def test_build_registry_contains_core_tools(tmp_path: Path) -> None:
 def test_build_orchestrator_auto_approves(tmp_path: Path) -> None:
     settings = AgentSettings(workspace=tmp_path, auto_approve=True)
 
-    run = build_orchestrator(settings).run("hello")
+    orchestrator, _ = build_orchestrator(settings)
+    run = orchestrator.run("hello")
 
     assert run.status is RunStatus.COMPLETED
 
@@ -286,5 +328,5 @@ def test_cli_run_detach_spawns_worker(tmp_path: Path, monkeypatch: Any) -> None:
 
 def test_build_orchestrator_with_llm_includes_react_agent(tmp_path: Path) -> None:
     settings = AgentSettings(workspace=tmp_path, use_docker_sandbox=False)
-    orchestrator = build_orchestrator(settings, use_llm_planner=True, console=Console())
+    orchestrator, _ = build_orchestrator(settings, use_llm_planner=True, console=Console())
     assert orchestrator.executor.react_agent is not None

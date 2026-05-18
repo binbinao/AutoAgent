@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoAgent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <div class="layout">
+      <header class="header">
+        <div class="brand">
+          <h1>AutoAgent</h1>
+          <p class="tagline">目标 → DAG 计划 → 执行 → 报告</p>
+        </div>
+        <span id="config-pill" class="pill">加载配置…</span>
+      </header>
+
+      <main class="grid">
+        <section class="card card-primary">
+          <h2>新建任务</h2>
+          <label class="field">
+            <span>目标</span>
+            <textarea
+              id="goal"
+              rows="4"
+              placeholder="例如：研究 AI Agent for Engineering，并生成 Markdown 报告"
+            ></textarea>
+          </label>
+          <div class="options">
+            <label class="checkbox">
+              <input type="checkbox" id="use-llm" checked />
+              LLM 规划（--llm）
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" id="auto-approve" checked />
+              自动批准并执行
+            </label>
+          </div>
+          <div class="actions">
+            <button id="run-btn" class="btn btn-primary">开始运行</button>
+            <button id="approve-btn" class="btn btn-secondary hidden">批准计划</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>执行状态</h2>
+          <div id="run-meta" class="meta muted">尚未开始</div>
+          <div class="progress-wrap">
+            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <ul id="progress-log" class="log"></ul>
+        </section>
+
+        <section class="card card-wide">
+          <h2>计划 DAG</h2>
+          <ol id="plan-list" class="plan-list muted">等待计划…</ol>
+        </section>
+
+        <section class="card card-wide">
+          <div class="card-head">
+            <h2>研究报告</h2>
+            <select id="report-select" class="select"></select>
+          </div>
+          <article id="report-view" class="report markdown-body muted">完成后将显示报告</article>
+        </section>
+
+        <section class="card card-wide">
+          <h2>历史任务</h2>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>目标</th>
+                <th>计划</th>
+                <th>结果</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

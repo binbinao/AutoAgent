@@ -52,9 +52,9 @@ class AgentSettings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
-            _UserTomlSettingsSource(settings_cls),
-            dotenv_settings,
             env_settings,
+            dotenv_settings,
+            _UserTomlSettingsSource(settings_cls),
             file_secret_settings,
         )
 
@@ -66,7 +66,7 @@ class AgentSettings(BaseSettings):
     python_timeout_seconds: int = 10
     log_level: str = "WARNING"
     semantic_memory_backend: str = "memory"  # "memory" | "chroma"
-    react_max_steps: int = 10
+    react_max_steps: int = 15
     max_context_tokens: int = 8192
     use_docker_sandbox: bool = True
     state_path: Path = Field(default_factory=lambda: Path.home() / ".autoagent" / "run_state.json")

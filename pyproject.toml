@@ -27,6 +27,7 @@ dev = [
 ]
 browser = ["playwright>=1.48.0"]
 vector = ["chromadb>=0.5.15"]
+web = ["fastapi>=0.115.0", "uvicorn[standard]>=0.32.0"]
 
 [project.scripts]
 autoagent = "autoagent.cli:app"
@@ -37,6 +38,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autoagent"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/autoagent/web/static" = "autoagent/web/static"
 
 [tool.ruff]
 line-length = 100
