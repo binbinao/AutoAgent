@@ -2,15 +2,11 @@ const TERMINAL = new Set(["completed", "failed"]);
 const ACTIVE = new Set(["running", "approved", "created"]);
 const RUN_STORAGE_KEY = "autoagent.activeRunId";
 
-const STATUS_LABELS = {
-  idle: "空闲",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-  awaiting_approval: "待批准",
-};
-
 const $ = (id) => document.getElementById(id);
+
+let pollTimer = null;
+let currentRunId = null;
+let lastRenderedRun = null;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -51,36 +47,31 @@ function setStatusBadge(status) {
   const badge = $("status-badge");
   if (!badge) return;
   const shown = status === "idle" ? "idle" : displayStatus(status);
-  badge.textContent = STATUS_LABELS[shown] || shown;
+  const label = t(`status.${shown}`);
+  badge.textContent = label !== `status.${shown}` ? label : shown;
   badge.className = `status-badge status-${shown}`;
 }
 
+function showIdleRunMeta() {
+  $("run-meta").textContent = t("run.notStarted");
+  $("run-meta").classList.add("muted");
+  setStatusBadge("idle");
+}
+
 function renderPlan(plan, nodeStatuses = {}) {
-  const list = $("plan-list");
+  const graph = $("plan-graph");
+  if (!graph) return;
   if (!plan?.nodes?.length) {
-    list.innerHTML = '<li class="timeline-empty">无计划节点</li>';
-    list.classList.add("muted");
+    graph.classList.add("muted");
+    graph.innerHTML = `<p class="plan-graph-empty">${escapeHtml(t("plan.noNodes"))}</p>`;
     return;
   }
-  list.classList.remove("muted");
-  list.innerHTML = plan.nodes
-    .map((node, index) => {
-      const st = nodeStatuses[node.id] || "pending";
-      const tool = node.tool_name || "ReAct";
-      return `<li class="timeline-item status-${st}">
-        <div class="timeline-marker">${index + 1}</div>
-        <div class="timeline-body">
-          <div><span class="node-id">${escapeHtml(node.id)}</span>
-          <span class="node-tool">${escapeHtml(tool)}</span></div>
-          <p class="node-desc">${escapeHtml(node.description)}</p>
-        </div>
-      </li>`;
-    })
-    .join("");
+  renderPlanGraph(graph, plan, nodeStatuses);
 }
 
 function renderProgress(run) {
-  $("run-meta").textContent = `Run ${run.id.slice(0, 8)}`;
+  lastRenderedRun = run;
+  $("run-meta").textContent = t("run.id", { id: run.id.slice(0, 8) });
   $("run-meta").classList.remove("muted");
   setStatusBadge(run.status);
 
@@ -109,18 +100,25 @@ function isActiveRun(run) {
   return ACTIVE.has(run.status);
 }
 
+function updateConfigPill(cfg) {
+  const effective = cfg.effective || cfg;
+  const mode = effective.default_task_mode || "research";
+  syncTaskModeRadios(mode);
+  $("config-pill").textContent = `${effective.default_model} · ${mode}`;
+  $("config-pill").removeAttribute("data-i18n");
+}
+
 async function loadConfig() {
   const cfg = await api("/api/config");
-  const mode = cfg.default_task_mode || "research";
-  syncTaskModeRadios(mode);
-  $("config-pill").textContent = `${cfg.default_model} · ${mode}`;
+  updateConfigPill(cfg);
+  return cfg;
 }
 
 async function loadHistory() {
   const rows = await api("/api/history?limit=15");
   const body = $("history-body");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="4" class="muted">暂无历史</td></tr>';
+    body.innerHTML = `<tr><td colspan="4" class="muted">${escapeHtml(t("history.empty"))}</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -128,7 +126,7 @@ async function loadHistory() {
       (r) => `<tr>
         <td>${escapeHtml(r.goal.slice(0, 60))}${r.goal.length > 60 ? "…" : ""}</td>
         <td>${escapeHtml(r.plan_summary.slice(0, 40))}…</td>
-        <td class="status-${escapeHtml(r.outcome)}">${escapeHtml(r.outcome)}</td>
+        <td class="status-${escapeHtml(r.outcome)}">${escapeHtml(translateOutcome(r.outcome))}</td>
         <td>${escapeHtml(r.created_at.slice(0, 16).replace("T", " "))}</td>
       </tr>`
     )
@@ -140,10 +138,15 @@ async function loadReports(selectName) {
   const sel = $("report-select");
   sel.innerHTML = reports.length
     ? reports.map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join("")
-    : '<option value="">无报告</option>';
+    : `<option value="">${escapeHtml(t("report.none"))}</option>`;
 
   const name = selectName || reports[0]?.name;
-  if (!name) return;
+  if (!name) {
+    const view = $("report-view");
+    view.classList.add("muted");
+    view.innerHTML = `<div class="empty-state"><p>${escapeHtml(t("report.empty"))}</p></div>`;
+    return;
+  }
   sel.value = name;
   const doc = await api(`/api/reports/${encodeURIComponent(name)}`);
   const view = $("report-view");
@@ -158,9 +161,6 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-
-let pollTimer = null;
-let currentRunId = null;
 
 function stopPoll() {
   if (pollTimer) clearInterval(pollTimer);
@@ -220,7 +220,7 @@ async function resumeActiveRun() {
   renderProgress(active);
   $("approve-btn").classList.add("hidden");
   setRunning(true);
-  $("plan-list").classList.remove("muted");
+  $("plan-graph")?.classList.remove("muted");
   startPoll(active.id);
   return true;
 }
@@ -228,7 +228,7 @@ async function resumeActiveRun() {
 async function startRun() {
   syncTaskModeSelect();
   const goal = $("goal").value.trim();
-  if (!goal) return alert("请输入目标");
+  if (!goal) return alert(t("alert.goalRequired"));
 
   setRunning(true);
   setStatusBadge("running");
@@ -269,7 +269,7 @@ async function startRun() {
 }
 
 async function approveRun() {
-  if (!currentRunId) return alert("没有待批准的运行");
+  if (!currentRunId) return alert(t("alert.noRunToApprove"));
   setRunning(true);
   setStatusBadge("running");
   $("approve-btn").classList.add("hidden");
@@ -284,6 +284,36 @@ async function approveRun() {
   }
 }
 
+window.onLocaleChange = () => {
+  applyI18n();
+  const nav = document.querySelector(".main-tabs");
+  if (nav) nav.setAttribute("aria-label", t("nav.aria"));
+  const group = document.querySelector(".lang-switch");
+  if (group) group.setAttribute("aria-label", t("lang.switchAria"));
+  if (cachedConfig) renderConfigForm(cachedConfig);
+  if (lastRenderedRun) {
+    renderProgress(lastRenderedRun);
+  } else {
+    showIdleRunMeta();
+    const graph = $("plan-graph");
+    if (graph && !lastRenderedRun) {
+      graph.classList.add("muted");
+      graph.innerHTML = `<p class="plan-graph-empty">${escapeHtml(t("plan.waiting"))}</p>`;
+    }
+  }
+  loadHistory().catch(console.error);
+  const view = $("report-view");
+  if (view?.classList.contains("muted")) {
+    view.innerHTML = `<div class="empty-state"><p>${escapeHtml(t("report.empty"))}</p></div>`;
+  }
+};
+
+function bindLangSwitch() {
+  document.querySelectorAll("[data-lang-btn]").forEach((btn) => {
+    btn.addEventListener("click", () => setLocale(btn.dataset.langBtn));
+  });
+}
+
 document.querySelectorAll('input[name="task-mode-radio"]').forEach((el) => {
   el.addEventListener("change", syncTaskModeSelect);
 });
@@ -292,13 +322,168 @@ $("run-btn").addEventListener("click", startRun);
 $("approve-btn").addEventListener("click", approveRun);
 $("report-select").addEventListener("change", (e) => loadReports(e.target.value));
 
-async function bootstrap() {
+let cachedConfig = null;
+let configDirty = false;
+
+function configFieldLabel(key) {
+  const label = t(`configField.${key}`);
+  return label.startsWith("configField.") ? key : label;
+}
+
+function switchMainTab(tab) {
+  const isConfig = tab === "config";
+  $("tab-workspace").classList.toggle("is-active", !isConfig);
+  $("tab-config").classList.toggle("is-active", isConfig);
+  $("tab-workspace").setAttribute("aria-selected", String(!isConfig));
+  $("tab-config").setAttribute("aria-selected", String(isConfig));
+  $("view-workspace").classList.toggle("hidden", isConfig);
+  $("view-config").classList.toggle("hidden", !isConfig);
+  $("view-workspace").hidden = isConfig;
+  $("view-config").hidden = !isConfig;
+  if (isConfig && !cachedConfig) loadConfigPage().catch(console.error);
+}
+
+function renderConfigForm(cfg) {
+  cachedConfig = cfg;
+  const form = $("config-form");
+  const pathEl = $("config-path");
+  if (pathEl) {
+    pathEl.textContent = t("configPage.path", { path: cfg.user_config_path });
+  }
+
+  form.innerHTML = cfg.fields
+    .map((field) => {
+      const key = field.key;
+      const value = cfg.effective[key];
+      const inFile = Object.hasOwn(cfg.user_file, key);
+      const envHint = field.env ? `<span class="config-env">${escapeHtml(field.env)}</span>` : "";
+      const fileBadge = inFile
+        ? `<span class="config-badge">${escapeHtml(t("configPage.inFile"))}</span>`
+        : "";
+
+      let control = "";
+      if (field.type === "bool") {
+        control = `<label class="toggle config-toggle">
+          <input type="checkbox" name="${escapeHtml(key)}" ${value ? "checked" : ""} />
+          <span class="toggle-track"></span>
+          <span class="toggle-label">${value ? "true" : "false"}</span>
+        </label>`;
+      } else if (field.type === "select") {
+        const options = (field.options || [])
+          .map(
+            (opt) =>
+              `<option value="${escapeHtml(opt)}" ${opt === value ? "selected" : ""}>${escapeHtml(opt)}</option>`
+          )
+          .join("");
+        control = `<select class="select" name="${escapeHtml(key)}" id="cfg-${escapeHtml(key)}">${options}</select>`;
+      } else {
+        const inputType = field.type === "int" ? "number" : "text";
+        const extra = field.type === "int" ? ' min="1" step="1"' : "";
+        control = `<input class="select config-input" type="${inputType}" name="${escapeHtml(key)}" id="cfg-${escapeHtml(key)}" value="${escapeHtml(String(value ?? ""))}"${extra} />`;
+      }
+
+      const descKey = `configField.${key}.desc`;
+      const desc = t(descKey);
+      const descHtml =
+        desc !== descKey ? `<p class="config-field-desc">${escapeHtml(desc)}</p>` : `<p class="config-field-desc">${escapeHtml(field.description || "")}</p>`;
+
+      return `<div class="config-field" data-config-key="${escapeHtml(key)}">
+        <div class="config-field-head">
+          <label class="field-label" for="cfg-${escapeHtml(key)}">${escapeHtml(configFieldLabel(key))}</label>
+          ${fileBadge}${envHint}
+        </div>
+        ${control}
+        ${descHtml}
+      </div>`;
+    })
+    .join("");
+
+  form.querySelectorAll("input, select").forEach((el) => {
+    el.addEventListener("change", () => {
+      configDirty = true;
+      setConfigStatus("");
+      if (el.type === "checkbox") {
+        const label = el.closest(".toggle")?.querySelector(".toggle-label");
+        if (label) label.textContent = el.checked ? "true" : "false";
+      }
+    });
+  });
+  configDirty = false;
+}
+
+function collectConfigForm() {
+  const payload = {};
+  $("config-form").querySelectorAll("[name]").forEach((el) => {
+    const key = el.name;
+    if (el.type === "checkbox") {
+      payload[key] = el.checked;
+    } else if (el.type === "number") {
+      payload[key] = Number(el.value);
+    } else {
+      payload[key] = el.value;
+    }
+  });
+  return payload;
+}
+
+function setConfigStatus(message, isError = false) {
+  const el = $("config-status");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.toggle("config-status-error", isError);
+  el.classList.toggle("muted", !message);
+}
+
+async function loadConfigPage() {
+  setConfigStatus(t("configPage.loading"));
+  const cfg = await api("/api/config");
+  renderConfigForm(cfg);
+  updateConfigPill(cfg);
+  setConfigStatus("");
+}
+
+async function saveConfig() {
+  const btn = $("config-save-btn");
+  btn.disabled = true;
+  setConfigStatus(t("configPage.saving"));
   try {
-    await loadConfig();
+    const cfg = await api("/api/config", {
+      method: "PUT",
+      body: JSON.stringify(collectConfigForm()),
+    });
+    renderConfigForm(cfg);
+    updateConfigPill(cfg);
+    configDirty = false;
+    setConfigStatus(t("configPage.saved"));
+  } catch (e) {
+    setConfigStatus(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function bindMainTabs() {
+  $("tab-workspace").addEventListener("click", () => switchMainTab("workspace"));
+  $("tab-config").addEventListener("click", () => switchMainTab("config"));
+  $("config-save-btn").addEventListener("click", () => saveConfig());
+  $("config-reset-btn").addEventListener("click", () => {
+    if (cachedConfig) renderConfigForm(cachedConfig);
+    configDirty = false;
+    setConfigStatus(t("configPage.resetDone"));
+  });
+}
+
+async function bootstrap() {
+  initLocale();
+  bindLangSwitch();
+  bindMainTabs();
+  showIdleRunMeta();
+  try {
+    const cfg = await loadConfig();
+    cachedConfig = cfg;
     const resumed = await resumeActiveRun();
     await loadHistory();
     if (!resumed) await loadReports();
-    if (!resumed) setStatusBadge("idle");
   } catch (e) {
     console.error(e);
   }

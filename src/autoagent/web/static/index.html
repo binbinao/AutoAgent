@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=3" />
+    <link rel="stylesheet" href="/static/styles.css?v=6" />
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
@@ -26,43 +26,75 @@
           </div>
           <div>
             <h1>AutoAgent</h1>
-            <p class="tagline">目标 → 计划 DAG → 执行 → 报告</p>
+            <p class="tagline" data-i18n="tagline">Goal → DAG plan → Execute → Report</p>
           </div>
         </div>
-        <span id="config-pill" class="pill">加载配置…</span>
+        <div class="topbar-actions">
+          <div class="lang-switch" role="group" aria-label="Interface language" data-i18n-aria="lang.switchAria">
+            <button type="button" class="lang-btn is-active" data-lang-btn="en" data-i18n="lang.en">EN</button>
+            <button type="button" class="lang-btn" data-lang-btn="zh" data-i18n="lang.zh">中文</button>
+          </div>
+          <span id="config-pill" class="pill" data-i18n="config.loading">Loading config…</span>
+        </div>
       </header>
 
-      <main class="workspace">
+      <nav class="main-tabs" role="tablist" aria-label="Main navigation" data-i18n-aria="nav.aria">
+        <button
+          type="button"
+          id="tab-workspace"
+          class="main-tab is-active"
+          role="tab"
+          aria-selected="true"
+          aria-controls="view-workspace"
+          data-i18n="nav.workspace"
+        >
+          Tasks
+        </button>
+        <button
+          type="button"
+          id="tab-config"
+          class="main-tab"
+          role="tab"
+          aria-selected="false"
+          aria-controls="view-config"
+          data-i18n="nav.config"
+        >
+          Configuration
+        </button>
+      </nav>
+
+      <main id="view-workspace" class="workspace view-panel" role="tabpanel" aria-labelledby="tab-workspace">
         <section class="panel panel-compose" aria-labelledby="compose-heading">
           <div class="panel-header">
-            <h2 id="compose-heading">新建任务</h2>
-            <p class="panel-desc">描述目标，选择模式后启动 Agent</p>
+            <h2 id="compose-heading" data-i18n="compose.title">New task</h2>
+            <p class="panel-desc" data-i18n="compose.desc">Describe your goal, pick a mode, and start the agent</p>
           </div>
 
           <label class="field">
-            <span class="field-label">目标</span>
+            <span class="field-label" data-i18n="goal.label">Goal</span>
             <textarea
               id="goal"
               rows="5"
-              placeholder="例如：研究某公司并评估投资价值，生成 Markdown 报告"
+              data-i18n-placeholder="goal.placeholder"
+              placeholder="e.g. Research a company and assess investment value; output a Markdown report"
             ></textarea>
           </label>
 
           <fieldset class="mode-fieldset">
-            <legend class="field-label">任务类型</legend>
-            <div class="mode-toggle" role="radiogroup" aria-label="任务类型">
+            <legend class="field-label" data-i18n="mode.legend">Task mode</legend>
+            <div class="mode-toggle" role="radiogroup" data-i18n-aria="mode.aria">
               <label class="mode-option">
                 <input type="radio" name="task-mode-radio" value="research" checked />
                 <span class="mode-card">
-                  <strong>深度调研</strong>
-                  <small>多源搜索 · 长报告</small>
+                  <strong data-i18n="mode.research.title">Deep research</strong>
+                  <small data-i18n="mode.research.desc">Multi-source search · Long report</small>
                 </span>
               </label>
               <label class="mode-option">
                 <input type="radio" name="task-mode-radio" value="quick" />
                 <span class="mode-card">
-                  <strong>轻量任务</strong>
-                  <small>快速完成 · 简短输出</small>
+                  <strong data-i18n="mode.quick.title">Quick task</strong>
+                  <small data-i18n="mode.quick.desc">Fast path · Short output</small>
                 </span>
               </label>
             </div>
@@ -76,33 +108,35 @@
             <label class="toggle">
               <input type="checkbox" id="use-llm" checked />
               <span class="toggle-track"></span>
-              <span class="toggle-label">LLM 规划</span>
+              <span class="toggle-label" data-i18n="toggle.llm">LLM planning</span>
             </label>
             <label class="toggle">
               <input type="checkbox" id="auto-approve" checked />
               <span class="toggle-track"></span>
-              <span class="toggle-label">自动批准执行</span>
+              <span class="toggle-label" data-i18n="toggle.autoApprove">Auto-approve & run</span>
             </label>
           </div>
 
           <div class="actions">
-            <button id="run-btn" type="button" class="btn btn-primary">开始运行</button>
-            <button id="approve-btn" type="button" class="btn btn-secondary hidden">批准计划</button>
+            <button id="run-btn" type="button" class="btn btn-primary" data-i18n="btn.run">Start run</button>
+            <button id="approve-btn" type="button" class="btn btn-secondary hidden" data-i18n="btn.approve">
+              Approve plan
+            </button>
           </div>
         </section>
 
         <section class="panel panel-status" aria-labelledby="status-heading" aria-live="polite">
           <div class="panel-header panel-header-row">
             <div>
-              <h2 id="status-heading">执行状态</h2>
-              <p id="run-meta" class="run-meta muted">尚未开始</p>
+              <h2 id="status-heading" data-i18n="status.title">Execution</h2>
+              <p id="run-meta" class="run-meta muted">Not started yet</p>
             </div>
-            <span id="status-badge" class="status-badge status-idle">空闲</span>
+            <span id="status-badge" class="status-badge status-idle">Idle</span>
           </div>
 
           <div class="progress-block">
             <div class="progress-label">
-              <span>进度</span>
+              <span data-i18n="status.progress">Progress</span>
               <span id="progress-pct" class="progress-pct">0%</span>
             </div>
             <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -111,57 +145,94 @@
           </div>
 
           <div class="log-panel">
-            <h3 class="log-title">事件日志</h3>
+            <h3 class="log-title" data-i18n="status.logTitle">Event log</h3>
             <ul id="progress-log" class="log"></ul>
-            <p id="log-empty" class="log-empty">运行后将显示节点完成记录</p>
+            <p id="log-empty" class="log-empty" data-i18n="status.logEmpty">
+              Node completion events appear here while running
+            </p>
           </div>
         </section>
 
         <section class="panel panel-span" aria-labelledby="plan-heading">
           <div class="panel-header">
-            <h2 id="plan-heading">计划 DAG</h2>
-            <p class="panel-desc">拓扑顺序 · 节点状态实时更新</p>
+            <h2 id="plan-heading" data-i18n="plan.title">Plan DAG</h2>
+            <p class="panel-desc" data-i18n="plan.desc">Topological order · Live node status</p>
           </div>
-          <ol id="plan-list" class="plan-timeline muted">
-            <li class="timeline-empty">等待计划生成…</li>
-          </ol>
+          <div id="plan-graph" class="plan-graph muted">
+            <p class="plan-graph-empty" data-i18n="plan.waiting">Waiting for plan…</p>
+          </div>
         </section>
 
         <section class="panel panel-span" aria-labelledby="report-heading">
           <div class="panel-header panel-header-row">
             <div>
-              <h2 id="report-heading">研究报告</h2>
-              <p class="panel-desc">Markdown 渲染</p>
+              <h2 id="report-heading" data-i18n="report.title">Research report</h2>
+              <p class="panel-desc" data-i18n="report.desc">Markdown preview</p>
             </div>
-            <select id="report-select" class="select select-compact" aria-label="选择报告"></select>
+            <select
+              id="report-select"
+              class="select select-compact"
+              data-i18n-aria="report.selectAria"
+              aria-label="Select report"
+            ></select>
           </div>
           <article id="report-view" class="report markdown-body muted">
-            <div class="empty-state"><p>任务完成后，报告将显示在此处</p></div>
+            <div class="empty-state"><p data-i18n="report.empty">Your report will appear here when the run completes</p></div>
           </article>
         </section>
 
         <section class="panel panel-span" aria-labelledby="history-heading">
           <div class="panel-header">
-            <h2 id="history-heading">历史任务</h2>
+            <h2 id="history-heading" data-i18n="history.title">Task history</h2>
           </div>
           <div class="table-wrap">
             <table class="table">
               <thead>
                 <tr>
-                  <th scope="col">目标</th>
-                  <th scope="col">计划</th>
-                  <th scope="col">结果</th>
-                  <th scope="col">时间</th>
+                  <th scope="col" data-i18n="history.colGoal">Goal</th>
+                  <th scope="col" data-i18n="history.colPlan">Plan</th>
+                  <th scope="col" data-i18n="history.colOutcome">Outcome</th>
+                  <th scope="col" data-i18n="history.colTime">Time</th>
                 </tr>
               </thead>
               <tbody id="history-body">
-                <tr><td colspan="4" class="muted">加载中…</td></tr>
+                <tr><td colspan="4" class="muted" data-i18n="history.loading">Loading…</td></tr>
               </tbody>
             </table>
           </div>
         </section>
       </main>
+
+      <section
+        id="view-config"
+        class="view-panel view-config hidden"
+        role="tabpanel"
+        aria-labelledby="tab-config"
+        hidden
+      >
+        <div class="panel panel-span panel-config">
+          <div class="panel-header">
+            <h2 data-i18n="configPage.title">Configuration</h2>
+            <p class="panel-desc" data-i18n="configPage.desc">
+              Persisted to ~/.autoagent/config.toml (env vars still override on restart)
+            </p>
+          </div>
+          <p id="config-path" class="config-path muted" aria-live="polite"></p>
+          <form id="config-form" class="config-grid" novalidate></form>
+          <div class="actions config-actions">
+            <button type="button" id="config-reset-btn" class="btn btn-secondary" data-i18n="configPage.reset">
+              Reset
+            </button>
+            <button type="button" id="config-save-btn" class="btn btn-primary" data-i18n="configPage.save">
+              Save configuration
+            </button>
+          </div>
+          <p id="config-status" class="config-status muted" role="status" aria-live="polite"></p>
+        </div>
+      </section>
     </div>
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/i18n.js?v=6"></script>
+    <script src="/static/dag-graph.js?v=6"></script>
+    <script src="/static/app.js?v=6"></script>
   </body>
 </html>

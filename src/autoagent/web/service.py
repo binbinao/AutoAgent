@@ -9,7 +9,14 @@ from rich.console import Console
 
 from autoagent.cli.app import _resolve_task_mode, build_orchestrator
 from autoagent.cli.run_flow import execute_approved_run
-from autoagent.config import AgentSettings
+from autoagent.config import (
+    CONFIG_FIELD_SPECS,
+    AgentSettings,
+    load_user_toml,
+    settings_as_dict,
+    user_config_path,
+    write_user_config,
+)
 from autoagent.memory import EpisodicMemory
 from autoagent.models import AgentRun, Plan, RunStatus
 from autoagent.report import _DEFAULT_REPORT_DIR, ensure_run_report
@@ -25,15 +32,39 @@ class RunService:
         self.settings = settings or AgentSettings()
         self.store = RunStore()
 
+    def reload_settings(self) -> None:
+        self.settings = AgentSettings()
+
     def public_config(self) -> dict[str, Any]:
+        payload = self.full_config()
         return {
-            "default_model": self.settings.default_model,
-            "workspace": str(self.settings.workspace.resolve()),
-            "auto_approve": self.settings.auto_approve,
+            "default_model": payload["effective"]["default_model"],
+            "workspace": payload["effective"]["workspace"],
+            "auto_approve": payload["effective"]["auto_approve"],
             "reports_dir": _DEFAULT_REPORT_DIR,
-            "default_task_mode": self.settings.default_task_mode,
+            "default_task_mode": payload["effective"]["default_task_mode"],
             "task_modes": [m.value for m in TaskMode],
         }
+
+    def full_config(self) -> dict[str, Any]:
+        user_file = load_user_toml()
+        return {
+            "user_config_path": str(user_config_path()),
+            "effective": settings_as_dict(self.settings),
+            "user_file": {
+                spec["key"]: user_file[spec["key"]]
+                for spec in CONFIG_FIELD_SPECS
+                if spec["key"] in user_file
+            },
+            "fields": list(CONFIG_FIELD_SPECS),
+            "task_modes": [m.value for m in TaskMode],
+            "reports_dir": _DEFAULT_REPORT_DIR,
+        }
+
+    def update_config(self, updates: dict[str, Any]) -> dict[str, Any]:
+        write_user_config(updates)
+        self.reload_settings()
+        return self.full_config()
 
     def list_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
         memory = EpisodicMemory(self.settings.memory_path)

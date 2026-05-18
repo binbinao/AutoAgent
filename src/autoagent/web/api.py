@@ -22,6 +22,24 @@ class RunCreateRequest(BaseModel):
     task_mode: str | None = None
 
 
+class ConfigUpdateRequest(BaseModel):
+    default_model: str | None = None
+    workspace: str | None = None
+    default_task_mode: str | None = None
+    auto_approve: bool | None = None
+    memory_path: str | None = None
+    chroma_path: str | None = None
+    semantic_memory_backend: str | None = None
+    python_timeout_seconds: int | None = None
+    use_docker_sandbox: bool | None = None
+    log_level: str | None = None
+    react_max_steps: int | None = None
+    react_max_steps_quick: int | None = None
+    max_context_tokens: int | None = None
+    state_path: str | None = None
+    log_path: str | None = None
+
+
 def create_app(settings: AgentSettings | None = None) -> FastAPI:
     service = RunService(settings)
     app = FastAPI(title="AutoAgent", version="0.1.0")
@@ -39,7 +57,17 @@ def create_app(settings: AgentSettings | None = None) -> FastAPI:
 
     @app.get("/api/config")
     def config() -> dict[str, Any]:
-        return service.public_config()
+        return service.full_config()
+
+    @app.put("/api/config")
+    def update_config(body: ConfigUpdateRequest) -> dict[str, Any]:
+        updates = body.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No config fields provided")
+        try:
+            return service.update_config(updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/history")
     def history(limit: int = 20) -> list[dict[str, Any]]:
