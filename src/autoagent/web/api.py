@@ -3,10 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
 from autoagent.config import AgentSettings
 from autoagent.web.service import RunService
@@ -24,6 +25,13 @@ class RunCreateRequest(BaseModel):
 def create_app(settings: AgentSettings | None = None) -> FastAPI:
     service = RunService(settings)
     app = FastAPI(title="AutoAgent", version="0.1.0")
+
+    @app.middleware("http")
+    async def disable_api_cache(request: Request, call_next) -> Response:
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

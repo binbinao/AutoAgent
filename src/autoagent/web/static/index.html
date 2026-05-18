@@ -4,91 +4,164 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AutoAgent</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=3" />
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
-    <div class="layout">
-      <header class="header">
+    <div class="app-shell">
+      <header class="topbar">
         <div class="brand">
-          <h1>AutoAgent</h1>
-          <p class="tagline">目标 → DAG 计划 → 执行 → 报告</p>
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="2" width="12" height="12" rx="3" class="mark-a" />
+              <rect x="18" y="2" width="12" height="12" rx="3" class="mark-b" />
+              <rect x="10" y="18" width="12" height="12" rx="3" class="mark-c" />
+            </svg>
+          </div>
+          <div>
+            <h1>AutoAgent</h1>
+            <p class="tagline">目标 → 计划 DAG → 执行 → 报告</p>
+          </div>
         </div>
         <span id="config-pill" class="pill">加载配置…</span>
       </header>
 
-      <main class="grid">
-        <section class="card card-primary">
-          <h2>新建任务</h2>
+      <main class="workspace">
+        <section class="panel panel-compose" aria-labelledby="compose-heading">
+          <div class="panel-header">
+            <h2 id="compose-heading">新建任务</h2>
+            <p class="panel-desc">描述目标，选择模式后启动 Agent</p>
+          </div>
+
           <label class="field">
-            <span>目标</span>
+            <span class="field-label">目标</span>
             <textarea
               id="goal"
-              rows="4"
-              placeholder="例如：研究 AI Agent for Engineering，并生成 Markdown 报告"
+              rows="5"
+              placeholder="例如：研究某公司并评估投资价值，生成 Markdown 报告"
             ></textarea>
           </label>
-          <div class="options">
-            <label class="field field-inline">
-              <span>任务类型</span>
-              <select id="task-mode" class="select">
-                <option value="research">深度调研 (research)</option>
-                <option value="quick">轻量任务 (quick)</option>
-              </select>
-            </label>
-            <label class="checkbox">
+
+          <fieldset class="mode-fieldset">
+            <legend class="field-label">任务类型</legend>
+            <div class="mode-toggle" role="radiogroup" aria-label="任务类型">
+              <label class="mode-option">
+                <input type="radio" name="task-mode-radio" value="research" checked />
+                <span class="mode-card">
+                  <strong>深度调研</strong>
+                  <small>多源搜索 · 长报告</small>
+                </span>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="task-mode-radio" value="quick" />
+                <span class="mode-card">
+                  <strong>轻量任务</strong>
+                  <small>快速完成 · 简短输出</small>
+                </span>
+              </label>
+            </div>
+            <select id="task-mode" class="sr-only" tabindex="-1" aria-hidden="true">
+              <option value="research">research</option>
+              <option value="quick">quick</option>
+            </select>
+          </fieldset>
+
+          <div class="option-row">
+            <label class="toggle">
               <input type="checkbox" id="use-llm" checked />
-              LLM 规划（--llm）
+              <span class="toggle-track"></span>
+              <span class="toggle-label">LLM 规划</span>
             </label>
-            <label class="checkbox">
+            <label class="toggle">
               <input type="checkbox" id="auto-approve" checked />
-              自动批准并执行
+              <span class="toggle-track"></span>
+              <span class="toggle-label">自动批准执行</span>
             </label>
           </div>
+
           <div class="actions">
-            <button id="run-btn" class="btn btn-primary">开始运行</button>
-            <button id="approve-btn" class="btn btn-secondary hidden">批准计划</button>
+            <button id="run-btn" type="button" class="btn btn-primary">开始运行</button>
+            <button id="approve-btn" type="button" class="btn btn-secondary hidden">批准计划</button>
           </div>
         </section>
 
-        <section class="card">
-          <h2>执行状态</h2>
-          <div id="run-meta" class="meta muted">尚未开始</div>
-          <div class="progress-wrap">
-            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+        <section class="panel panel-status" aria-labelledby="status-heading" aria-live="polite">
+          <div class="panel-header panel-header-row">
+            <div>
+              <h2 id="status-heading">执行状态</h2>
+              <p id="run-meta" class="run-meta muted">尚未开始</p>
+            </div>
+            <span id="status-badge" class="status-badge status-idle">空闲</span>
           </div>
-          <ul id="progress-log" class="log"></ul>
-        </section>
 
-        <section class="card card-wide">
-          <h2>计划 DAG</h2>
-          <ol id="plan-list" class="plan-list muted">等待计划…</ol>
-        </section>
-
-        <section class="card card-wide">
-          <div class="card-head">
-            <h2>研究报告</h2>
-            <select id="report-select" class="select"></select>
+          <div class="progress-block">
+            <div class="progress-label">
+              <span>进度</span>
+              <span id="progress-pct" class="progress-pct">0%</span>
+            </div>
+            <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+            </div>
           </div>
-          <article id="report-view" class="report markdown-body muted">完成后将显示报告</article>
+
+          <div class="log-panel">
+            <h3 class="log-title">事件日志</h3>
+            <ul id="progress-log" class="log"></ul>
+            <p id="log-empty" class="log-empty">运行后将显示节点完成记录</p>
+          </div>
         </section>
 
-        <section class="card card-wide">
-          <h2>历史任务</h2>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>目标</th>
-                <th>计划</th>
-                <th>结果</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-          </table>
+        <section class="panel panel-span" aria-labelledby="plan-heading">
+          <div class="panel-header">
+            <h2 id="plan-heading">计划 DAG</h2>
+            <p class="panel-desc">拓扑顺序 · 节点状态实时更新</p>
+          </div>
+          <ol id="plan-list" class="plan-timeline muted">
+            <li class="timeline-empty">等待计划生成…</li>
+          </ol>
+        </section>
+
+        <section class="panel panel-span" aria-labelledby="report-heading">
+          <div class="panel-header panel-header-row">
+            <div>
+              <h2 id="report-heading">研究报告</h2>
+              <p class="panel-desc">Markdown 渲染</p>
+            </div>
+            <select id="report-select" class="select select-compact" aria-label="选择报告"></select>
+          </div>
+          <article id="report-view" class="report markdown-body muted">
+            <div class="empty-state"><p>任务完成后，报告将显示在此处</p></div>
+          </article>
+        </section>
+
+        <section class="panel panel-span" aria-labelledby="history-heading">
+          <div class="panel-header">
+            <h2 id="history-heading">历史任务</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">目标</th>
+                  <th scope="col">计划</th>
+                  <th scope="col">结果</th>
+                  <th scope="col">时间</th>
+                </tr>
+              </thead>
+              <tbody id="history-body">
+                <tr><td colspan="4" class="muted">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=3"></script>
   </body>
 </html>

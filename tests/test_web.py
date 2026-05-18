@@ -20,6 +20,10 @@ def client(tmp_path: Path) -> TestClient:
     return TestClient(create_app(settings))
 
 
+def test_api_responses_are_not_cached(client: TestClient) -> None:
+    assert client.get("/api/health").headers.get("cache-control") == "no-store"
+
+
 def test_health_and_config(client: TestClient) -> None:
     assert client.get("/api/health").json() == {"status": "ok"}
     cfg = client.get("/api/config").json()
@@ -33,6 +37,8 @@ def test_index_served(client: TestClient) -> None:
     res = client.get("/")
     assert res.status_code == 200
     assert "AutoAgent" in res.text
+    assert "status-badge" in res.text
+    assert "plan-timeline" in res.text
 
 
 def test_create_run_heuristic(client: TestClient) -> None:
