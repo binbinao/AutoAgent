@@ -33,6 +33,19 @@ CONFIG_FIELD_SPECS: tuple[dict[str, Any], ...] = (
         "description": "Default task mode when not specified.",
     },
     {
+        "key": "default_tool_preset",
+        "type": "select",
+        "options": ["minimal", "web-research", "full"],
+        "env": "AUTOAGENT_DEFAULT_TOOL_PRESET",
+        "description": "Default tool preset when not overridden (minimal, web-research, full).",
+    },
+    {
+        "key": "enabled_tools",
+        "type": "string",
+        "env": "AUTOAGENT_ENABLED_TOOLS",
+        "description": "Comma-separated tool names; overrides presets when set.",
+    },
+    {
         "key": "auto_approve",
         "type": "bool",
         "env": "AUTOAGENT_AUTO_APPROVE",
@@ -209,6 +222,8 @@ class AgentSettings(BaseSettings):
     log_level: str = "WARNING"
     semantic_memory_backend: str = "memory"  # "memory" | "chroma"
     default_task_mode: str = "research"
+    default_tool_preset: str = "web-research"
+    enabled_tools: str | None = None
     react_max_steps: int = 15
     react_max_steps_quick: int = 8
     max_context_tokens: int = 8192

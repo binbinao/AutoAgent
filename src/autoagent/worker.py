@@ -22,6 +22,7 @@ def main(
     model: str | None = typer.Option(None, "--model", "-m"),
     llm: bool = typer.Option(False, "--llm"),
     mode: str | None = typer.Option(None, "--mode", "-M"),
+    tool_preset: str | None = typer.Option(None, "--tool-preset"),
 ) -> None:
     """Plan and execute *goal* (used by ``autoagent run --detach``)."""
     new_trace_id()
@@ -29,7 +30,11 @@ def main(
     task_mode = _resolve_task_mode(mode, settings)
     configure_logging(settings.log_level)
     orchestrator, report_router = build_orchestrator(
-        settings, use_llm_planner=llm, console=None, task_mode=task_mode
+        settings,
+        use_llm_planner=llm,
+        console=None,
+        task_mode=task_mode,
+        tool_preset=tool_preset,
     )
 
     agent_run = orchestrator.plan(goal)
