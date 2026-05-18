@@ -34,6 +34,9 @@ htmlcov/
 .autoagent/
 data/
 
+# Local product roadmap (not versioned)
+plan.md
+
 # IDE
 .vscode/
 .idea/
