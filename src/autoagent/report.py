@@ -10,6 +10,7 @@ from typing import Any
 
 from autoagent.llm import LiteLLMRouter
 from autoagent.models import NodeExecutionResult, ToolResult
+from autoagent.output_locale import OutputLocale
 from autoagent.prompts import report_synthesis_prompt
 from autoagent.task_mode import TaskMode
 from autoagent.tools.base import ToolExecutionError
@@ -142,8 +143,9 @@ def synthesize_report_markdown(
     goal: str,
     context: str,
     mode: TaskMode = TaskMode.RESEARCH,
+    locale: OutputLocale = OutputLocale.EN,
 ) -> str:
-    system_prompt = report_synthesis_prompt(mode)
+    system_prompt = report_synthesis_prompt(mode, locale=locale)
     min_expand_bytes = 400 if mode is TaskMode.QUICK else MIN_REPORT_BYTES
     content = router.complete(
         [
@@ -182,9 +184,12 @@ def make_report_synthesizer(
     router: LiteLLMRouter,
     *,
     mode: TaskMode = TaskMode.RESEARCH,
+    locale: OutputLocale = OutputLocale.EN,
 ) -> ReportSynthesizer:
     def synthesize(task: str, context: str) -> str:
-        return synthesize_report_markdown(router, goal=task, context=context, mode=mode)
+        return synthesize_report_markdown(
+            router, goal=task, context=context, mode=mode, locale=locale
+        )
 
     return synthesize
 

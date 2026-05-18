@@ -245,6 +245,7 @@ async function startRun() {
         llm: $("use-llm").checked,
         approve: $("auto-approve").checked,
         task_mode: $("task-mode").value,
+        locale: getLocale(),
       }),
     });
     currentRunId = run.id;

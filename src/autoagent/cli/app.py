@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from autoagent.llm import LiteLLMRouter, LLMPlanner
 from autoagent.memory import EpisodicMemory, create_semantic_memory, record_task_with_semantic
 from autoagent.models import AgentRun, NodeStatus, Plan, PlanNode, RunStatus
 from autoagent.orchestrator import HeuristicPlanner, ManualApprover, Orchestrator
+from autoagent.output_locale import OutputLocale, parse_output_locale
 from autoagent.react import ReActAgent
 from autoagent.report import make_report_synthesizer
 from autoagent.run_state import (
@@ -78,8 +80,13 @@ def build_orchestrator(
     use_llm_planner: bool = False,
     console: Console | None = None,
     task_mode: TaskMode | None = None,
+    output_locale: OutputLocale | None = None,
 ) -> tuple[Orchestrator, LiteLLMRouter | None]:
     mode = task_mode or _resolve_task_mode(None, settings)
+    locale = output_locale
+    if locale is None:
+        env_locale = os.environ.get("AUTOAGENT_OUTPUT_LOCALE")
+        locale = parse_output_locale(env_locale) if env_locale else OutputLocale.EN
     registry = build_registry(settings.workspace, settings)
     react_agent: ReActAgent | None = None
     planner: HeuristicPlanner | LLMPlanner
@@ -88,7 +95,9 @@ def build_orchestrator(
     if use_llm_planner:
         router = LiteLLMRouter(settings.default_model)
         semantic = create_semantic_memory(settings)
-        planner = LLMPlanner(router, semantic=semantic, task_mode=mode)
+        planner = LLMPlanner(
+            router, semantic=semantic, task_mode=mode, output_locale=locale
+        )
         on_step = make_react_step_printer(console or Console()) if console else None
         react_max = (
             settings.react_max_steps_quick
@@ -102,13 +111,14 @@ def build_orchestrator(
             model=settings.default_model,
             max_context_tokens=settings.max_context_tokens,
             task_mode=mode,
+            output_locale=locale,
         )
         executor = DAGExecutor(
             registry,
             react_agent=react_agent,
             on_react_step=on_step,
             plan_mutator=ExtendNodesMutator(),
-            report_synthesizer=make_report_synthesizer(router, mode=mode),
+            report_synthesizer=make_report_synthesizer(router, mode=mode, locale=locale),
             workspace=settings.workspace,
         )
     else:
