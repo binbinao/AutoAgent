@@ -23,6 +23,7 @@ from autoagent.output_locale import parse_output_locale
 from autoagent.report import _DEFAULT_REPORT_DIR, ensure_run_report
 from autoagent.run_state import RunProgress
 from autoagent.task_mode import TaskMode, parse_task_mode
+from autoagent.tools.presets import list_presets, resolve_tool_names
 from autoagent.utils.logging import new_trace_id
 from autoagent.web.serializers import agent_run_status, node_statuses_from_results, plan_to_dict
 from autoagent.web.store import RunStore, WebRunRecord
@@ -38,17 +39,23 @@ class RunService:
 
     def public_config(self) -> dict[str, Any]:
         payload = self.full_config()
+        effective = payload["effective"]
+        default_mode = parse_task_mode(effective["default_task_mode"])
         return {
-            "default_model": payload["effective"]["default_model"],
-            "workspace": payload["effective"]["workspace"],
-            "auto_approve": payload["effective"]["auto_approve"],
+            "default_model": effective["default_model"],
+            "workspace": effective["workspace"],
+            "auto_approve": effective["auto_approve"],
             "reports_dir": _DEFAULT_REPORT_DIR,
-            "default_task_mode": payload["effective"]["default_task_mode"],
+            "default_task_mode": effective["default_task_mode"],
             "task_modes": [m.value for m in TaskMode],
+            "default_tool_preset": effective["default_tool_preset"],
+            "tool_presets": list_presets(),
+            "enabled_tools": resolve_tool_names(self.settings, task_mode=default_mode),
         }
 
     def full_config(self) -> dict[str, Any]:
         user_file = load_user_toml()
+        default_mode = parse_task_mode(self.settings.default_task_mode)
         return {
             "user_config_path": str(user_config_path()),
             "effective": settings_as_dict(self.settings),
@@ -60,6 +67,11 @@ class RunService:
             "fields": list(CONFIG_FIELD_SPECS),
             "task_modes": [m.value for m in TaskMode],
             "reports_dir": _DEFAULT_REPORT_DIR,
+            "tooling": {
+                "default_tool_preset": self.settings.default_tool_preset,
+                "tool_presets": list_presets(),
+                "effective_tools": resolve_tool_names(self.settings, task_mode=default_mode),
+            },
         }
 
     def update_config(self, updates: dict[str, Any]) -> dict[str, Any]:

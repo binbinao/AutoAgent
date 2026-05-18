@@ -30,8 +30,10 @@ def test_health_and_config(client: TestClient) -> None:
     assert "effective" in cfg
     assert "fields" in cfg
     assert cfg["effective"]["default_task_mode"] == "research"
+    assert cfg["effective"]["default_tool_preset"] == "web-research"
     assert "quick" in cfg["task_modes"]
     assert len(cfg["fields"]) >= 10
+    assert "web.search" in cfg["tooling"]["effective_tools"]
 
 
 def test_index_served(client: TestClient) -> None:

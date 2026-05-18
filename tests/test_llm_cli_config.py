@@ -113,7 +113,12 @@ def test_settings_can_be_overridden_with_environment(monkeypatch: Any, tmp_path:
 
 
 def test_build_registry_contains_core_tools(tmp_path: Path) -> None:
-    settings = AgentSettings(workspace=tmp_path, python_timeout_seconds=1, use_docker_sandbox=False)
+    settings = AgentSettings(
+        workspace=tmp_path,
+        python_timeout_seconds=1,
+        use_docker_sandbox=False,
+        default_tool_preset="full",
+    )
     registry = build_registry(tmp_path, settings)
 
     assert "echo" in registry.names

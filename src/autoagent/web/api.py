@@ -27,6 +27,8 @@ class ConfigUpdateRequest(BaseModel):
     default_model: str | None = None
     workspace: str | None = None
     default_task_mode: str | None = None
+    default_tool_preset: str | None = None
+    enabled_tools: str | None = None
     auto_approve: bool | None = None
     memory_path: str | None = None
     chroma_path: str | None = None

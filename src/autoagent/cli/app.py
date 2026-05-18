@@ -30,18 +30,8 @@ from autoagent.run_state import (
     save_run_snapshot,
 )
 from autoagent.task_mode import TaskMode, parse_task_mode
-from autoagent.tools import (
-    ApiRequestTool,
-    BrowserSnapshotTool,
-    EchoTool,
-    FileListTool,
-    FileReadTool,
-    FileWriteTool,
-    PythonSandboxTool,
-    ToolRegistry,
-    WebFetchTool,
-    WebSearchTool,
-)
+from autoagent.tools import ToolRegistry
+from autoagent.tools.presets import build_registry_from_settings
 from autoagent.utils.logging import configure_logging, new_trace_id
 
 app = typer.Typer(help="AutoAgent — autonomous knowledge-work agent.")
@@ -54,23 +44,18 @@ class RunInterruptedError(Exception):
     """Raised when the user interrupts execution with Ctrl+C."""
 
 
-def build_registry(workspace: Path, settings: AgentSettings) -> ToolRegistry:
-    return ToolRegistry.with_tools(
-        [
-            EchoTool(),
-            FileReadTool(workspace),
-            FileWriteTool(workspace),
-            FileListTool(workspace),
-            WebSearchTool(),
-            WebFetchTool(),
-            PythonSandboxTool(
-                workspace,
-                timeout_seconds=settings.python_timeout_seconds,
-                use_docker=settings.use_docker_sandbox,
-            ),
-            ApiRequestTool(),
-            BrowserSnapshotTool(),
-        ]
+def build_registry(
+    workspace: Path,
+    settings: AgentSettings,
+    *,
+    tool_preset: str | None = None,
+    task_mode: TaskMode | None = None,
+) -> ToolRegistry:
+    return build_registry_from_settings(
+        workspace,
+        settings,
+        preset=tool_preset,
+        task_mode=task_mode,
     )
 
 
@@ -81,13 +66,19 @@ def build_orchestrator(
     console: Console | None = None,
     task_mode: TaskMode | None = None,
     output_locale: OutputLocale | None = None,
+    tool_preset: str | None = None,
 ) -> tuple[Orchestrator, LiteLLMRouter | None]:
     mode = task_mode or _resolve_task_mode(None, settings)
     locale = output_locale
     if locale is None:
         env_locale = os.environ.get("AUTOAGENT_OUTPUT_LOCALE")
         locale = parse_output_locale(env_locale) if env_locale else OutputLocale.EN
-    registry = build_registry(settings.workspace, settings)
+    registry = build_registry(
+        settings.workspace,
+        settings,
+        tool_preset=tool_preset,
+        task_mode=mode,
+    )
     react_agent: ReActAgent | None = None
     planner: HeuristicPlanner | LLMPlanner
     router: LiteLLMRouter | None = None
@@ -211,13 +202,22 @@ def plan_cmd(
         "-M",
         help="Task mode: quick (lightweight) or research (deep).",
     ),
+    tool_preset: str | None = typer.Option(
+        None,
+        "--tool-preset",
+        help="Tool preset: minimal, web-research, or full.",
+    ),
 ) -> None:
     """Create a plan without executing it."""
     new_trace_id()
     settings = _resolve_settings(model)
     task_mode = _resolve_task_mode(mode, settings)
     orchestrator, _ = build_orchestrator(
-        settings, use_llm_planner=llm, console=console, task_mode=task_mode
+        settings,
+        use_llm_planner=llm,
+        console=console,
+        task_mode=task_mode,
+        tool_preset=tool_preset,
     )
     agent_run = orchestrator.plan(goal)
     _display_plan(agent_run.plan)
@@ -231,6 +231,7 @@ def _spawn_detached_run(
     llm: bool,
     model: str | None,
     task_mode: TaskMode,
+    tool_preset: str | None,
     settings: AgentSettings,
 ) -> None:
     settings.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,6 +243,8 @@ def _spawn_detached_run(
     if model:
         cmd.extend(["--model", model])
     cmd.extend(["--mode", task_mode.value])
+    if tool_preset:
+        cmd.extend(["--tool-preset", tool_preset])
 
     with settings.log_path.open("w", encoding="utf-8") as log_file:
         proc = subprocess.Popen(  # noqa: S603
@@ -306,6 +309,11 @@ def run(
         "-M",
         help="Task mode: quick (lightweight) or research (deep).",
     ),
+    tool_preset: str | None = typer.Option(
+        None,
+        "--tool-preset",
+        help="Tool preset: minimal, web-research, or full.",
+    ),
 ) -> None:
     """Plan and optionally execute a goal."""
     new_trace_id()
@@ -322,12 +330,17 @@ def run(
             llm=llm,
             model=model,
             task_mode=task_mode,
+            tool_preset=tool_preset,
             settings=settings,
         )
         return
 
     orchestrator, report_router = build_orchestrator(
-        settings, use_llm_planner=llm, console=console, task_mode=task_mode
+        settings,
+        use_llm_planner=llm,
+        console=console,
+        task_mode=task_mode,
+        tool_preset=tool_preset,
     )
 
     mode_label = "轻量" if task_mode is TaskMode.QUICK else "深度调研"
