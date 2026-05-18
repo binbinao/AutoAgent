@@ -7,7 +7,7 @@ from rich.console import Console
 from autoagent.cli.display import execution_progress, render_plan_tree
 from autoagent.config import AgentSettings
 from autoagent.llm import LiteLLMRouter
-from autoagent.memory import record_task_with_semantic
+from autoagent.memory import create_semantic_memory, record_run_history
 from autoagent.models import AgentRun, NodeExecutionResult, NodeStatus, RunStatus
 from autoagent.orchestrator import Orchestrator
 from autoagent.report import ensure_run_report
@@ -78,14 +78,6 @@ def execute_approved_run(
         if last.ok and "answer" in last.output:
             lesson = str(last.output.get("answer", ""))[:500]
 
-    record_task_with_semantic(
-        settings,
-        goal=agent_run.goal,
-        plan_summary=agent_run.plan.summary(),
-        outcome=completed.status.value,
-        lesson=lesson,
-    )
-
     mode = task_mode or parse_task_mode(settings.default_task_mode)
     report_path = ensure_run_report(
         goal=agent_run.goal,
@@ -96,6 +88,21 @@ def execute_approved_run(
         report_synthesizer=orchestrator.executor.report_synthesizer,
         mode=mode,
     )
+
+    record_run_history(
+        settings.memory_path,
+        workspace=settings.workspace,
+        agent_run=agent_run,
+        outcome=completed.status.value,
+        results=completed.results,
+        report_path=report_path,
+    )
+    if lesson:
+        semantic = create_semantic_memory(settings)
+        semantic.add(
+            text=f"Goal: {agent_run.goal}\nOutcome: {completed.status.value}\nLesson: {lesson}",
+            metadata={"goal": agent_run.goal[:200], "outcome": completed.status.value},
+        )
 
     statuses = {
         r.node_id: NodeStatus.COMPLETED if r.tool_result.ok else NodeStatus.FAILED

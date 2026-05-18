@@ -42,6 +42,7 @@ def test_index_served(client: TestClient) -> None:
     assert "AutoAgent" in res.text
     assert "status-badge" in res.text
     assert "plan-graph" in res.text
+    assert "history-tree" in res.text
     assert "dag-graph.js" in res.text
     assert "lang-switch" in res.text
     assert "main-tabs" in res.text
@@ -123,3 +124,41 @@ def test_create_run_rejects_unknown_locale(client: TestClient) -> None:
 def test_list_reports_returns_list(client: TestClient) -> None:
     reports = client.get("/api/reports").json()
     assert isinstance(reports, list)
+
+
+def test_history_tree_empty(client: TestClient) -> None:
+    body = client.get("/api/history/tree").json()
+    assert body == {"items": []}
+
+
+def test_history_tree_with_root_and_children(client: TestClient, tmp_path: Path) -> None:
+    from autoagent.memory import EpisodicMemory
+
+    settings = AgentSettings(workspace=tmp_path, memory_path=tmp_path / "mem.db")
+    memory = EpisodicMemory(settings.memory_path)
+    root_id = memory.record_task(goal="main", plan_summary="p", outcome="completed", run_id="run-1")
+    memory.record_task(
+        goal="step one",
+        plan_summary="echo",
+        outcome="completed",
+        parent_task_id=root_id,
+        node_id="n1",
+    )
+    memory.close()
+
+    app_client = TestClient(create_app(settings))
+    body = app_client.get("/api/history/tree").json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["goal"] == "main"
+    assert len(body["items"][0]["children"]) == 1
+
+
+def test_report_download_attachment(client: TestClient, tmp_path: Path) -> None:
+    reports_dir = tmp_path / ".autoagent" / "reports"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "sample.md").write_text("# hello", encoding="utf-8")
+
+    res = client.get("/api/reports/sample.md/download")
+    assert res.status_code == 200
+    assert "attachment" in res.headers.get("content-disposition", "")
+    assert res.text == "# hello"
