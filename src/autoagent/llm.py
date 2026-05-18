@@ -11,7 +11,8 @@ from litellm import completion
 from autoagent.memory import SemanticMemory
 from autoagent.models import Plan
 from autoagent.plan_enrichment import enrich_plan_data
-from autoagent.prompts import PLANNER_SYSTEM_PROMPT
+from autoagent.prompts import planner_system_prompt
+from autoagent.task_mode import TaskMode
 
 _dotenv_loaded = False
 
@@ -69,24 +70,27 @@ class LLMPlanner:
         *,
         model: str | None = None,
         semantic: SemanticMemory | None = None,
+        task_mode: TaskMode = TaskMode.RESEARCH,
     ) -> None:
         self.router = router
         self.model = model
         self.semantic = semantic
+        self.task_mode = task_mode
 
-    def create_plan(self, goal: str) -> Plan:
+    def create_plan(self, goal: str, *, task_mode: TaskMode | None = None) -> Plan:
         context_lines: list[str] = []
         if self.semantic is not None:
             context_lines = self.semantic.search(goal, limit=5)
 
-        user_content = goal
+        mode = task_mode or self.task_mode
+        user_content = f"[Task mode: {mode.value}]\n\n{goal}"
         if context_lines:
             joined = "\n".join(f"- {line}" for line in context_lines)
-            user_content = f"{goal}\n\nRelevant knowledge from past tasks:\n{joined}"
+            user_content = f"{user_content}\n\nRelevant knowledge from past tasks:\n{joined}"
 
         content = self.router.complete(
             [
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                {"role": "system", "content": planner_system_prompt(mode)},
                 {"role": "user", "content": user_content},
             ],
             model=self.model,
@@ -94,7 +98,7 @@ class LLMPlanner:
         data: dict[str, Any] = json.loads(_extract_json(content))
         data.setdefault("goal", goal)
         _coerce_plan_node_models(data, self.router.default_model)
-        enrich_plan_data(data, goal)
+        enrich_plan_data(data, goal, mode=mode)
         return Plan.model_validate(data)
 
 

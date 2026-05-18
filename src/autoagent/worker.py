@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from autoagent.cli.app import _resolve_settings, build_orchestrator
+from autoagent.cli.app import _resolve_settings, _resolve_task_mode, build_orchestrator
 from autoagent.cli.run_flow import execute_approved_run
 from autoagent.models import RunStatus
 from autoagent.run_state import RunSnapshot, save_run_snapshot
@@ -21,12 +21,16 @@ def main(
     approve: bool = typer.Option(True, "--approve", "-y"),
     model: str | None = typer.Option(None, "--model", "-m"),
     llm: bool = typer.Option(False, "--llm"),
+    mode: str | None = typer.Option(None, "--mode", "-M"),
 ) -> None:
     """Plan and execute *goal* (used by ``autoagent run --detach``)."""
     new_trace_id()
     settings = _resolve_settings(model)
+    task_mode = _resolve_task_mode(mode, settings)
     configure_logging(settings.log_level)
-    orchestrator, report_router = build_orchestrator(settings, use_llm_planner=llm, console=None)
+    orchestrator, report_router = build_orchestrator(
+        settings, use_llm_planner=llm, console=None, task_mode=task_mode
+    )
 
     agent_run = orchestrator.plan(goal)
     if agent_run.status is RunStatus.AWAITING_APPROVAL and not approve:
@@ -52,6 +56,7 @@ def main(
             console=_console,
             snapshot=snapshot,
             report_router=report_router,
+            task_mode=task_mode,
         )
     except Exception:
         failed = agent_run.with_update(status=RunStatus.FAILED)

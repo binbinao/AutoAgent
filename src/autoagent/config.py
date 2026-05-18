@@ -66,7 +66,9 @@ class AgentSettings(BaseSettings):
     python_timeout_seconds: int = 10
     log_level: str = "WARNING"
     semantic_memory_backend: str = "memory"  # "memory" | "chroma"
+    default_task_mode: str = "research"
     react_max_steps: int = 15
+    react_max_steps_quick: int = 8
     max_context_tokens: int = 8192
     use_docker_sandbox: bool = True
     state_path: Path = Field(default_factory=lambda: Path.home() / ".autoagent" / "run_state.json")

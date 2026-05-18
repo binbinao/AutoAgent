@@ -10,7 +10,8 @@ from typing import Any
 
 from autoagent.llm import LiteLLMRouter
 from autoagent.models import NodeExecutionResult, ToolResult
-from autoagent.prompts import REPORT_SYNTHESIS_SYSTEM_PROMPT
+from autoagent.prompts import report_synthesis_prompt
+from autoagent.task_mode import TaskMode
 from autoagent.tools.base import ToolExecutionError
 from autoagent.tools.file_tools import resolve_workspace_path
 
@@ -135,10 +136,18 @@ def assemble_markdown_fallback(goal: str, context: str) -> str:
     )
 
 
-def synthesize_report_markdown(router: LiteLLMRouter, *, goal: str, context: str) -> str:
+def synthesize_report_markdown(
+    router: LiteLLMRouter,
+    *,
+    goal: str,
+    context: str,
+    mode: TaskMode = TaskMode.RESEARCH,
+) -> str:
+    system_prompt = report_synthesis_prompt(mode)
+    min_expand_bytes = 400 if mode is TaskMode.QUICK else MIN_REPORT_BYTES
     content = router.complete(
         [
-            {"role": "system", "content": REPORT_SYNTHESIS_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": (
@@ -150,10 +159,10 @@ def synthesize_report_markdown(router: LiteLLMRouter, *, goal: str, context: str
         ]
     )
     text = content.strip()
-    if len(text) < MIN_REPORT_BYTES:
+    if len(text) < min_expand_bytes:
         expanded = router.complete(
             [
-                {"role": "system", "content": REPORT_SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": (
@@ -169,9 +178,13 @@ def synthesize_report_markdown(router: LiteLLMRouter, *, goal: str, context: str
     return text if text else assemble_markdown_fallback(goal, context)
 
 
-def make_report_synthesizer(router: LiteLLMRouter) -> ReportSynthesizer:
+def make_report_synthesizer(
+    router: LiteLLMRouter,
+    *,
+    mode: TaskMode = TaskMode.RESEARCH,
+) -> ReportSynthesizer:
     def synthesize(task: str, context: str) -> str:
-        return synthesize_report_markdown(router, goal=task, context=context)
+        return synthesize_report_markdown(router, goal=task, context=context, mode=mode)
 
     return synthesize
 
@@ -227,6 +240,7 @@ def ensure_run_report(
     workspace: Path,
     router: LiteLLMRouter | None = None,
     report_synthesizer: ReportSynthesizer | None = None,
+    mode: TaskMode = TaskMode.RESEARCH,
 ) -> Path | None:
     """Write a report file when execution did not produce a substantial one."""
     existing = find_substantial_report_path(results, workspace)
@@ -240,7 +254,7 @@ def ensure_run_report(
     if report_synthesizer is not None:
         body = report_synthesizer(goal, context)
     elif router is not None:
-        body = synthesize_report_markdown(router, goal=goal, context=context)
+        body = synthesize_report_markdown(router, goal=goal, context=context, mode=mode)
     else:
         body = assemble_markdown_fallback(goal, context)
 

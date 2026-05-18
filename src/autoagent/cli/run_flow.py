@@ -12,6 +12,7 @@ from autoagent.models import AgentRun, NodeExecutionResult, NodeStatus, RunStatu
 from autoagent.orchestrator import Orchestrator
 from autoagent.report import ensure_run_report
 from autoagent.run_state import RunProgress, RunSnapshot, clear_run_snapshot, save_run_snapshot
+from autoagent.task_mode import TaskMode, parse_task_mode
 
 
 def execute_approved_run(
@@ -23,6 +24,7 @@ def execute_approved_run(
     snapshot: RunSnapshot | None = None,
     report_router: LiteLLMRouter | None = None,
     on_progress: Callable[[RunProgress], None] | None = None,
+    task_mode: TaskMode | None = None,
 ) -> AgentRun:
     """Execute an approved run, persisting progress to *settings.state_path*."""
     progress = snapshot.progress.model_copy(deep=True) if snapshot else RunProgress()
@@ -84,6 +86,7 @@ def execute_approved_run(
         lesson=lesson,
     )
 
+    mode = task_mode or parse_task_mode(settings.default_task_mode)
     report_path = ensure_run_report(
         goal=agent_run.goal,
         run_id=agent_run.id,
@@ -91,6 +94,7 @@ def execute_approved_run(
         workspace=settings.workspace,
         router=report_router,
         report_synthesizer=orchestrator.executor.report_synthesizer,
+        mode=mode,
     )
 
     statuses = {

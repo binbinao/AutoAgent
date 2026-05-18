@@ -18,6 +18,7 @@ class RunCreateRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=4000)
     llm: bool = True
     approve: bool = True
+    task_mode: str | None = None
 
 
 def create_app(settings: AgentSettings | None = None) -> FastAPI:
@@ -62,7 +63,12 @@ def create_app(settings: AgentSettings | None = None) -> FastAPI:
     @app.post("/api/runs")
     def create_run(body: RunCreateRequest) -> dict[str, Any]:
         try:
-            record = service.start_run(goal=body.goal, llm=body.llm, approve=body.approve)
+            record = service.start_run(
+                goal=body.goal,
+                llm=body.llm,
+                approve=body.approve,
+                task_mode=body.task_mode,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return record.to_dict()

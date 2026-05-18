@@ -25,6 +25,8 @@ def test_health_and_config(client: TestClient) -> None:
     cfg = client.get("/api/config").json()
     assert "default_model" in cfg
     assert "workspace" in cfg
+    assert cfg["default_task_mode"] == "research"
+    assert "quick" in cfg["task_modes"]
 
 
 def test_index_served(client: TestClient) -> None:

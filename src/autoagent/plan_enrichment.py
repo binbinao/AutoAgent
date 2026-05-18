@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from autoagent.task_mode import TaskMode
+
 _DEFAULT_REPORT_PATH = ".autoagent/reports/report.md"
 _SEARCH_TOOLS = frozenset({"web.search"})
 _FETCH_TOOLS = frozenset({"web.fetch"})
@@ -28,7 +30,25 @@ def _infer_search_query(description: str, goal: str) -> str:
     return goal.strip()[:200]
 
 
-def enrich_plan_data(data: dict[str, Any], goal: str) -> None:
+def _terminal_synthesis_description(existing: str, *, mode: TaskMode) -> str:
+    base = existing.strip()
+    if mode is TaskMode.QUICK:
+        path = _DEFAULT_REPORT_PATH
+        suffix = f"\n\n综合依赖步骤输出，撰写简洁 Markdown 结果；如需落盘则 file.write 到 {path}。"
+    else:
+        suffix = (
+            f"\n\n使用 web.search / web.fetch 回顾依赖节点发现，撰写完整 Markdown 研究报告，"
+            f"并用 file.write 保存到 {_DEFAULT_REPORT_PATH}。"
+        )
+    return (base + suffix).strip() if base else suffix.strip()
+
+
+def enrich_plan_data(
+    data: dict[str, Any],
+    goal: str,
+    *,
+    mode: TaskMode = TaskMode.RESEARCH,
+) -> None:
     """Mutate plan JSON in-place: fill missing tool_args and fix terminal synthesis nodes."""
     nodes = _node_list(data)
     if not nodes:
@@ -44,14 +64,11 @@ def enrich_plan_data(data: dict[str, Any], goal: str) -> None:
             if not query:
                 args["query"] = _infer_search_query(desc, goal)
             if "limit" not in args:
-                args["limit"] = 5
+                args["limit"] = 3 if mode is TaskMode.QUICK else 5
             node["tool_args"] = args
 
         elif tool in _FETCH_TOOLS:
-            if not str(args.get("url", "")).strip():
-                node["tool_args"] = args
-            else:
-                node["tool_args"] = args
+            node["tool_args"] = args
 
         elif tool == "file.write":
             if not str(args.get("path", "")).strip():
@@ -68,15 +85,14 @@ def enrich_plan_data(data: dict[str, Any], goal: str) -> None:
     if terminal_tool == "file.write":
         terminal["tool_name"] = None
         terminal["tool_args"] = {}
-        terminal["description"] = (
-            f"{terminal.get('description', '').strip()}\n\n"
-            "使用 web.search / web.fetch 回顾依赖节点发现，撰写完整 Markdown 研究报告，"
-            f"并用 file.write 保存到 {_DEFAULT_REPORT_PATH}。"
-        ).strip()
-    elif terminal_tool is None and "file.write" not in terminal.get("description", ""):
-        terminal["description"] = (
-            f"{terminal.get('description', '').strip()}\n\n"
-            f"综合依赖步骤输出，撰写完整 Markdown 报告并 file.write 到 {_DEFAULT_REPORT_PATH}。"
-        ).strip()
+        terminal["description"] = _terminal_synthesis_description(
+            str(terminal.get("description", "")),
+            mode=mode,
+        )
+    elif terminal_tool is None and "file.write" not in str(terminal.get("description", "")):
+        terminal["description"] = _terminal_synthesis_description(
+            str(terminal.get("description", "")),
+            mode=mode,
+        )
 
     data["nodes"] = nodes

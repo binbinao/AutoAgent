@@ -54,7 +54,9 @@ function renderProgress(run) {
 
 async function loadConfig() {
   const cfg = await api("/api/config");
-  $("config-pill").textContent = cfg.default_model;
+  const mode = cfg.default_task_mode || "research";
+  $("task-mode").value = mode;
+  $("config-pill").textContent = `${cfg.default_model} · ${mode}`;
 }
 
 async function loadHistory() {
@@ -143,6 +145,7 @@ async function startRun() {
     goal,
     llm: $("use-llm").checked,
     approve: $("auto-approve").checked,
+    task_mode: $("task-mode").value,
   };
 
   try {

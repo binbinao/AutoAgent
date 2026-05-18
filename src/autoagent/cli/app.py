@@ -27,6 +27,7 @@ from autoagent.run_state import (
     load_run_snapshot,
     save_run_snapshot,
 )
+from autoagent.task_mode import TaskMode, parse_task_mode
 from autoagent.tools import (
     ApiRequestTool,
     BrowserSnapshotTool,
@@ -76,7 +77,9 @@ def build_orchestrator(
     *,
     use_llm_planner: bool = False,
     console: Console | None = None,
+    task_mode: TaskMode | None = None,
 ) -> tuple[Orchestrator, LiteLLMRouter | None]:
+    mode = task_mode or _resolve_task_mode(None, settings)
     registry = build_registry(settings.workspace, settings)
     react_agent: ReActAgent | None = None
     planner: HeuristicPlanner | LLMPlanner
@@ -85,21 +88,27 @@ def build_orchestrator(
     if use_llm_planner:
         router = LiteLLMRouter(settings.default_model)
         semantic = create_semantic_memory(settings)
-        planner = LLMPlanner(router, semantic=semantic)
+        planner = LLMPlanner(router, semantic=semantic, task_mode=mode)
         on_step = make_react_step_printer(console or Console()) if console else None
+        react_max = (
+            settings.react_max_steps_quick
+            if mode is TaskMode.QUICK
+            else settings.react_max_steps
+        )
         react_agent = ReActAgent(
             router,
             registry,
-            max_steps=settings.react_max_steps,
+            max_steps=react_max,
             model=settings.default_model,
             max_context_tokens=settings.max_context_tokens,
+            task_mode=mode,
         )
         executor = DAGExecutor(
             registry,
             react_agent=react_agent,
             on_react_step=on_step,
             plan_mutator=ExtendNodesMutator(),
-            report_synthesizer=make_report_synthesizer(router),
+            report_synthesizer=make_report_synthesizer(router, mode=mode),
             workspace=settings.workspace,
         )
     else:
@@ -157,6 +166,10 @@ def _resolve_settings(model: str | None = None) -> AgentSettings:
     return settings
 
 
+def _resolve_task_mode(mode: str | None, settings: AgentSettings) -> TaskMode:
+    return parse_task_mode(mode or settings.default_task_mode)
+
+
 def _handle_interrupt(signum: int, frame: object | None) -> None:
     del signum, frame
     run = _interrupt_state.get("run")
@@ -182,11 +195,20 @@ def plan_cmd(
     goal: str,
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model override."),
     llm: bool = typer.Option(False, "--llm", help="Use LLM planner (requires an API key)."),
+    mode: str | None = typer.Option(
+        None,
+        "--mode",
+        "-M",
+        help="Task mode: quick (lightweight) or research (deep).",
+    ),
 ) -> None:
     """Create a plan without executing it."""
     new_trace_id()
     settings = _resolve_settings(model)
-    orchestrator, _ = build_orchestrator(settings, use_llm_planner=llm, console=console)
+    task_mode = _resolve_task_mode(mode, settings)
+    orchestrator, _ = build_orchestrator(
+        settings, use_llm_planner=llm, console=console, task_mode=task_mode
+    )
     agent_run = orchestrator.plan(goal)
     _display_plan(agent_run.plan)
     console.print(f"Status: {agent_run.status.value}")
@@ -198,6 +220,7 @@ def _spawn_detached_run(
     approve: bool,
     llm: bool,
     model: str | None,
+    task_mode: TaskMode,
     settings: AgentSettings,
 ) -> None:
     settings.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +231,7 @@ def _spawn_detached_run(
         cmd.append("--llm")
     if model:
         cmd.extend(["--model", model])
+    cmd.extend(["--mode", task_mode.value])
 
     with settings.log_path.open("w", encoding="utf-8") as log_file:
         proc = subprocess.Popen(  # noqa: S603
@@ -266,21 +290,38 @@ def run(
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model override."),
     llm: bool = typer.Option(False, "--llm", help="Use LLM planner (requires an API key)."),
+    mode: str | None = typer.Option(
+        None,
+        "--mode",
+        "-M",
+        help="Task mode: quick (lightweight) or research (deep).",
+    ),
 ) -> None:
     """Plan and optionally execute a goal."""
     new_trace_id()
     settings = _resolve_settings(model)
+    task_mode = _resolve_task_mode(mode, settings)
 
     if detach:
         if not approve:
             console.print("[yellow]Detached runs require --approve[/yellow]")
             raise typer.Exit(1)
-        _spawn_detached_run(goal, approve=approve, llm=llm, model=model, settings=settings)
+        _spawn_detached_run(
+            goal,
+            approve=approve,
+            llm=llm,
+            model=model,
+            task_mode=task_mode,
+            settings=settings,
+        )
         return
 
-    orchestrator, report_router = build_orchestrator(settings, use_llm_planner=llm, console=console)
+    orchestrator, report_router = build_orchestrator(
+        settings, use_llm_planner=llm, console=console, task_mode=task_mode
+    )
 
-    console.print(Panel(goal, title="[bold]Goal[/bold]", border_style="cyan"))
+    mode_label = "轻量" if task_mode is TaskMode.QUICK else "深度调研"
+    console.print(Panel(goal, title=f"[bold]Goal[/bold] · {mode_label}", border_style="cyan"))
     console.print("[dim]Planning…[/dim]")
     agent_run = orchestrator.plan(goal)
 
@@ -307,6 +348,7 @@ def run(
                 settings,
                 console=console,
                 report_router=report_router,
+                task_mode=task_mode,
             )
         except RunInterruptedError:
             raise typer.Exit(130) from None

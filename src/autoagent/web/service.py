@@ -7,13 +7,14 @@ from typing import Any
 
 from rich.console import Console
 
-from autoagent.cli.app import build_orchestrator
+from autoagent.cli.app import _resolve_task_mode, build_orchestrator
 from autoagent.cli.run_flow import execute_approved_run
 from autoagent.config import AgentSettings
 from autoagent.memory import EpisodicMemory
 from autoagent.models import AgentRun, Plan, RunStatus
 from autoagent.report import _DEFAULT_REPORT_DIR, ensure_run_report
 from autoagent.run_state import RunProgress
+from autoagent.task_mode import TaskMode, parse_task_mode
 from autoagent.utils.logging import new_trace_id
 from autoagent.web.serializers import agent_run_status, node_statuses_from_results, plan_to_dict
 from autoagent.web.store import RunStore, WebRunRecord
@@ -30,6 +31,8 @@ class RunService:
             "workspace": str(self.settings.workspace.resolve()),
             "auto_approve": self.settings.auto_approve,
             "reports_dir": _DEFAULT_REPORT_DIR,
+            "default_task_mode": self.settings.default_task_mode,
+            "task_modes": [m.value for m in TaskMode],
         }
 
     def list_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -74,16 +77,29 @@ class RunService:
             raise FileNotFoundError(safe)
         return path.read_text(encoding="utf-8")
 
-    def start_run(self, *, goal: str, llm: bool, approve: bool) -> WebRunRecord:
+    def start_run(
+        self,
+        *,
+        goal: str,
+        llm: bool,
+        approve: bool,
+        task_mode: str | None = None,
+    ) -> WebRunRecord:
         goal = goal.strip()
         if not goal:
             raise ValueError("Goal is required")
+
+        try:
+            mode = parse_task_mode(task_mode or self.settings.default_task_mode)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
         new_trace_id()
         orchestrator, report_router = build_orchestrator(
             self.settings,
             use_llm_planner=llm,
             console=None,
+            task_mode=mode,
         )
         agent_run = orchestrator.plan(goal)
         record = WebRunRecord(
@@ -91,6 +107,7 @@ class RunService:
             goal=goal,
             status=agent_run_status(agent_run),
             plan=plan_to_dict(agent_run.plan),
+            task_mode=mode.value,
         )
         self.store.put(record)
 
@@ -99,7 +116,7 @@ class RunService:
 
         thread = threading.Thread(
             target=self._execute_run,
-            args=(orchestrator, agent_run, report_router),
+            args=(orchestrator, agent_run, report_router, mode),
             daemon=True,
         )
         thread.start()
@@ -112,10 +129,12 @@ class RunService:
         if record.status != RunStatus.AWAITING_APPROVAL.value:
             raise ValueError(f"Run {run_id} is not awaiting approval")
 
+        mode = _resolve_task_mode(record.task_mode, self.settings)
         orchestrator, report_router = build_orchestrator(
             self.settings,
             use_llm_planner=True,
             console=None,
+            task_mode=mode,
         )
         if record.plan is None:
             raise ValueError("Run has no plan to execute")
@@ -138,7 +157,7 @@ class RunService:
 
         thread = threading.Thread(
             target=self._execute_run,
-            args=(orchestrator, agent_run, report_router),
+            args=(orchestrator, agent_run, report_router, mode),
             daemon=True,
         )
         thread.start()
@@ -153,6 +172,7 @@ class RunService:
         orchestrator: Any,
         agent_run: AgentRun,
         report_router: Any,
+        task_mode: TaskMode,
     ) -> None:
         run_id = agent_run.id
         self.store.update(run_id, status=RunStatus.RUNNING.value, progress=[])
@@ -169,6 +189,7 @@ class RunService:
                 console=console,
                 report_router=report_router,
                 on_progress=on_progress,
+                task_mode=task_mode,
             )
             path = ensure_run_report(
                 goal=agent_run.goal,
@@ -177,6 +198,7 @@ class RunService:
                 workspace=self.settings.workspace,
                 router=report_router,
                 report_synthesizer=orchestrator.executor.report_synthesizer,
+                mode=task_mode,
             )
             report_path: str | None = None
             report_name: str | None = None

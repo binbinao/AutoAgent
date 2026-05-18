@@ -9,7 +9,8 @@ from typing import Any
 from autoagent.llm import LiteLLMRouter
 from autoagent.memory import WorkingMemory
 from autoagent.models import ToolResult
-from autoagent.prompts import REACT_SYSTEM_PROMPT
+from autoagent.prompts import react_system_prompt
+from autoagent.task_mode import TaskMode
 from autoagent.tools.base import ToolExecutionError, ToolRegistry
 from autoagent.utils.tokens import fits_in_context, truncate_to_tokens
 
@@ -28,6 +29,7 @@ class ReActAgent:
         model: str | None = None,
         max_context_tokens: int = 8_192,
         working_memory: WorkingMemory | None = None,
+        task_mode: TaskMode = TaskMode.RESEARCH,
     ) -> None:
         self.router = router
         self.registry = registry
@@ -35,6 +37,7 @@ class ReActAgent:
         self.model = model
         self.max_context_tokens = max_context_tokens
         self.working_memory = working_memory or WorkingMemory(max_items=40)
+        self.task_mode = task_mode
 
     def run(
         self,
@@ -48,7 +51,10 @@ class ReActAgent:
         memory_block = memory_context.strip()
         if memory_block:
             memory_block = f"Relevant context from memory:\n{memory_block}\n"
-        system = REACT_SYSTEM_PROMPT.format(tools=tools_desc, memory_context=memory_block)
+        system = react_system_prompt(self.task_mode).format(
+            tools=tools_desc,
+            memory_context=memory_block,
+        )
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system},
             {"role": "user", "content": task},
