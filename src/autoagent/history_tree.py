@@ -6,9 +6,36 @@ from pathlib import Path
 from typing import Any
 
 from autoagent.memory import EpisodicTask
+from autoagent.report import _DEFAULT_REPORT_DIR
+
+REPORT_DIR = _DEFAULT_REPORT_DIR
 
 
-def build_history_tree(tasks: list[EpisodicTask]) -> list[dict[str, Any]]:
+def resolve_task_reports(task: EpisodicTask, workspace: Path) -> list[str]:
+    """Return validated report paths for a task, backfilling from disk by run_id when needed."""
+    paths: list[str] = list(task.report_paths)
+    root = workspace.resolve()
+
+    if task.run_id:
+        reports_dir = root / REPORT_DIR
+        if reports_dir.is_dir():
+            suffix = f"-{task.run_id[:8]}.md"
+            matches = sorted(reports_dir.glob(f"*{suffix}"), key=lambda p: p.stat().st_mtime)
+            for candidate in matches:
+                if not candidate.is_file():
+                    continue
+                rel = str(candidate.relative_to(root))
+                if rel not in paths:
+                    paths.append(rel)
+
+    valid: list[str] = []
+    for rel in paths:
+        if (root / rel).is_file():
+            valid.append(rel)
+    return valid
+
+
+def build_history_tree(tasks: list[EpisodicTask], *, workspace: Path) -> list[dict[str, Any]]:
     """Group flat tasks into root items with nested children (newest roots first)."""
     by_parent: dict[str | None, list[EpisodicTask]] = {}
     for task in tasks:
@@ -19,6 +46,11 @@ def build_history_tree(tasks: list[EpisodicTask]) -> list[dict[str, Any]]:
 
     def task_to_dict(task: EpisodicTask) -> dict[str, Any]:
         children = by_parent.get(task.id, [])
+        reports = (
+            report_entries(resolve_task_reports(task, workspace))
+            if task.parent_task_id is None
+            else []
+        )
         return {
             "id": task.id,
             "goal": task.goal,
@@ -28,7 +60,7 @@ def build_history_tree(tasks: list[EpisodicTask]) -> list[dict[str, Any]]:
             "created_at": task.created_at.isoformat(),
             "run_id": task.run_id,
             "node_id": task.node_id,
-            "reports": report_entries(list(task.report_paths)),
+            "reports": reports,
             "children": [task_to_dict(child) for child in children],
         }
 

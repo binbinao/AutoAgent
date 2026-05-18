@@ -21,7 +21,7 @@ from autoagent.history_tree import build_history_tree
 from autoagent.memory import EpisodicMemory
 from autoagent.models import AgentRun, Plan, RunStatus
 from autoagent.output_locale import parse_output_locale
-from autoagent.report import _DEFAULT_REPORT_DIR, ensure_run_report
+from autoagent.report import _DEFAULT_REPORT_DIR, default_report_path
 from autoagent.run_state import RunProgress
 from autoagent.task_mode import TaskMode, parse_task_mode
 from autoagent.tools.presets import list_presets, resolve_tool_names
@@ -105,7 +105,7 @@ class RunService:
             tasks = [*roots, *children]
         finally:
             memory.close()
-        return {"items": build_history_tree(tasks)}
+        return {"items": build_history_tree(tasks, workspace=self.settings.workspace)}
 
     def list_reports(self) -> list[dict[str, Any]]:
         reports_dir = self.settings.workspace / _DEFAULT_REPORT_DIR
@@ -255,18 +255,12 @@ class RunService:
                 on_progress=on_progress,
                 task_mode=task_mode,
             )
-            path = ensure_run_report(
-                goal=agent_run.goal,
-                run_id=agent_run.id,
-                results=completed.results,
-                workspace=self.settings.workspace,
-                router=report_router,
-                report_synthesizer=orchestrator.executor.report_synthesizer,
-                mode=task_mode,
+            path = default_report_path(
+                self.settings.workspace, agent_run.id, agent_run.goal
             )
             report_path: str | None = None
             report_name: str | None = None
-            if path is not None:
+            if path.is_file():
                 report_path = str(path.resolve())
                 report_name = path.name
 

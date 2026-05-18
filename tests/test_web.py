@@ -153,6 +153,25 @@ def test_history_tree_with_root_and_children(client: TestClient, tmp_path: Path)
     assert len(body["items"][0]["children"]) == 1
 
 
+def test_history_tree_backfills_report_by_run_id(client: TestClient, tmp_path: Path) -> None:
+    from autoagent.memory import EpisodicMemory
+
+    run_id = "abcdef12-0000-0000-0000-000000000000"
+    reports_dir = tmp_path / ".autoagent" / "reports"
+    reports_dir.mkdir(parents=True)
+    report_name = f"research-{run_id[:8]}.md"
+    (reports_dir / report_name).write_text("# backfill", encoding="utf-8")
+
+    settings = AgentSettings(workspace=tmp_path, memory_path=tmp_path / "mem.db")
+    memory = EpisodicMemory(settings.memory_path)
+    memory.record_task(goal="research", plan_summary="p", outcome="completed", run_id=run_id)
+    memory.close()
+
+    app_client = TestClient(create_app(settings))
+    body = app_client.get("/api/history/tree").json()
+    assert body["items"][0]["reports"][0]["name"] == report_name
+
+
 def test_report_download_attachment(client: TestClient, tmp_path: Path) -> None:
     reports_dir = tmp_path / ".autoagent" / "reports"
     reports_dir.mkdir(parents=True)
