@@ -17,6 +17,7 @@ from autoagent.config import (
     user_config_path,
     write_user_config,
 )
+from autoagent.history_tree import build_history_tree
 from autoagent.memory import EpisodicMemory
 from autoagent.models import AgentRun, Plan, RunStatus
 from autoagent.output_locale import parse_output_locale
@@ -95,6 +96,16 @@ class RunService:
             }
             for task in tasks
         ]
+
+    def list_history_tree(self, *, limit: int = 20) -> dict[str, Any]:
+        memory = EpisodicMemory(self.settings.memory_path)
+        try:
+            roots = memory.list_root_tasks(limit=limit)
+            children = memory.list_children([root.id for root in roots])
+            tasks = [*roots, *children]
+        finally:
+            memory.close()
+        return {"items": build_history_tree(tasks)}
 
     def list_reports(self) -> list[dict[str, Any]]:
         reports_dir = self.settings.workspace / _DEFAULT_REPORT_DIR

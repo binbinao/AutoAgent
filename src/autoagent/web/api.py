@@ -76,6 +76,10 @@ def create_app(settings: AgentSettings | None = None) -> FastAPI:
     def history(limit: int = 20) -> list[dict[str, Any]]:
         return service.list_history(limit=limit)
 
+    @app.get("/api/history/tree")
+    def history_tree(limit: int = 20) -> dict[str, Any]:
+        return service.list_history_tree(limit=limit)
+
     @app.get("/api/reports")
     def reports() -> list[dict[str, Any]]:
         return service.list_reports()
@@ -87,6 +91,19 @@ def create_app(settings: AgentSettings | None = None) -> FastAPI:
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"name": Path(name).name, "content": body}
+
+    @app.get("/api/reports/{name}/download")
+    def report_download(name: str) -> Response:
+        safe = Path(name).name
+        try:
+            body = service.read_report(safe)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+        )
 
     @app.get("/api/runs")
     def list_runs(limit: int = 20) -> list[dict[str, Any]]:

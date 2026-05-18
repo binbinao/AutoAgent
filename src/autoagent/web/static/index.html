@@ -185,20 +185,14 @@
           <div class="panel-header">
             <h2 id="history-heading" data-i18n="history.title">Task history</h2>
           </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col" data-i18n="history.colGoal">Goal</th>
-                  <th scope="col" data-i18n="history.colPlan">Plan</th>
-                  <th scope="col" data-i18n="history.colOutcome">Outcome</th>
-                  <th scope="col" data-i18n="history.colTime">Time</th>
-                </tr>
-              </thead>
-              <tbody id="history-body">
-                <tr><td colspan="4" class="muted" data-i18n="history.loading">Loading…</td></tr>
-              </tbody>
-            </table>
+          <div
+            id="history-tree"
+            class="history-tree"
+            role="tree"
+            aria-labelledby="history-heading"
+            data-i18n-aria="history.treeAria"
+          >
+            <p class="muted" data-i18n="history.loading">Loading…</p>
           </div>
         </section>
       </main>

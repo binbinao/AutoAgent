@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from autoagent.config import AgentSettings
+    from autoagent.models import AgentRun, NodeExecutionResult
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,16 @@ class EpisodicTask:
     plan_summary: str
     outcome: str
     created_at: datetime
+    parent_task_id: str | None = None
+    run_id: str | None = None
+    report_paths: tuple[str, ...] = ()
+    node_id: str | None = None
+
+
+_TASK_SELECT = (
+    "SELECT id, goal, plan_summary, outcome, created_at, "
+    "parent_task_id, run_id, report_paths, node_id FROM tasks"
+)
 
 
 class EpisodicMemory:
@@ -67,55 +79,116 @@ class EpisodicMemory:
             )
             """
         )
+        self._migrate_schema()
         self._connection.commit()
 
-    def record_task(self, *, goal: str, plan_summary: str, outcome: str) -> str:
-        task_id = str(uuid4())
-        created_at = datetime.now(UTC).isoformat()
-        self._connection.execute(
-            """
-            INSERT INTO tasks (id, goal, plan_summary, outcome, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (task_id, goal, plan_summary, outcome, created_at),
-        )
-        self._connection.commit()
-        return task_id
+    def _migrate_schema(self) -> None:
+        columns = {
+            row[1] for row in self._connection.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        migrations = {
+            "parent_task_id": "parent_task_id TEXT",
+            "run_id": "run_id TEXT",
+            "report_paths": "report_paths TEXT",
+            "node_id": "node_id TEXT",
+        }
+        for name, ddl in migrations.items():
+            if name not in columns:
+                self._connection.execute(f"ALTER TABLE tasks ADD COLUMN {ddl}")
 
-    def get_task(self, task_id: str) -> EpisodicTask | None:
-        cursor = self._connection.execute(
-            "SELECT id, goal, plan_summary, outcome, created_at FROM tasks WHERE id = ?",
-            (task_id,),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
+    def _row_to_task(self, row: sqlite3.Row) -> EpisodicTask:
+        raw_reports = row["report_paths"]
+        report_paths: tuple[str, ...] = ()
+        if raw_reports:
+            parsed = json.loads(str(raw_reports))
+            if isinstance(parsed, list):
+                report_paths = tuple(str(p) for p in parsed)
+        parent = row["parent_task_id"]
+        run_id = row["run_id"]
+        node_id = row["node_id"]
         return EpisodicTask(
             id=str(row["id"]),
             goal=str(row["goal"]),
             plan_summary=str(row["plan_summary"]),
             outcome=str(row["outcome"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
+            parent_task_id=str(parent) if parent else None,
+            run_id=str(run_id) if run_id else None,
+            report_paths=report_paths,
+            node_id=str(node_id) if node_id else None,
         )
+
+    def record_task(
+        self,
+        *,
+        goal: str,
+        plan_summary: str,
+        outcome: str,
+        task_id: str | None = None,
+        parent_task_id: str | None = None,
+        run_id: str | None = None,
+        report_paths: list[str] | None = None,
+        node_id: str | None = None,
+    ) -> str:
+        new_id = task_id or str(uuid4())
+        created_at = datetime.now(UTC).isoformat()
+        reports_json = json.dumps(report_paths or [])
+        self._connection.execute(
+            """
+            INSERT INTO tasks (
+                id, goal, plan_summary, outcome, created_at,
+                parent_task_id, run_id, report_paths, node_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id,
+                goal,
+                plan_summary,
+                outcome,
+                created_at,
+                parent_task_id,
+                run_id,
+                reports_json,
+                node_id,
+            ),
+        )
+        self._connection.commit()
+        return new_id
+
+    def get_task(self, task_id: str) -> EpisodicTask | None:
+        cursor = self._connection.execute(f"{_TASK_SELECT} WHERE id = ?", (task_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_task(row)
 
     def list_tasks(self, limit: int = 10) -> list[EpisodicTask]:
         """Return the most recent *limit* tasks, newest first."""
         cursor = self._connection.execute(
-            "SELECT id, goal, plan_summary, outcome, created_at "
-            "FROM tasks ORDER BY created_at DESC LIMIT ?",
+            f"{_TASK_SELECT} ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
-        rows = cursor.fetchall()
-        return [
-            EpisodicTask(
-                id=str(row["id"]),
-                goal=str(row["goal"]),
-                plan_summary=str(row["plan_summary"]),
-                outcome=str(row["outcome"]),
-                created_at=datetime.fromisoformat(str(row["created_at"])),
-            )
-            for row in rows
-        ]
+        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+    def list_root_tasks(self, limit: int = 20) -> list[EpisodicTask]:
+        cursor = self._connection.execute(
+            f"{_TASK_SELECT} WHERE parent_task_id IS NULL "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+    def list_children(self, parent_ids: list[str]) -> list[EpisodicTask]:
+        if not parent_ids:
+            return []
+        placeholders = ",".join("?" for _ in parent_ids)
+        cursor = self._connection.execute(
+            f"{_TASK_SELECT} WHERE parent_task_id IN ({placeholders}) "
+            "ORDER BY created_at ASC",
+            parent_ids,
+        )
+        return [self._row_to_task(row) for row in cursor.fetchall()]
 
     def close(self) -> None:
         self._connection.close()
@@ -194,6 +267,48 @@ def create_semantic_memory(settings: AgentSettings) -> SemanticMemory:
     if settings.semantic_memory_backend == "chroma":
         return ChromaDBSemanticMemory(settings.chroma_path)
     return InMemorySemanticMemory()
+
+
+def record_run_history(
+    memory_path: Path | str,
+    *,
+    workspace: Path,
+    agent_run: AgentRun,
+    outcome: str,
+    results: list[NodeExecutionResult],
+    report_path: Path | None,
+) -> str:
+    """Persist a root run and one child row per executed DAG node."""
+    episodic = EpisodicMemory(memory_path)
+    try:
+        report_paths: list[str] = []
+        if report_path is not None and report_path.is_file():
+            report_paths = [str(report_path.resolve().relative_to(workspace.resolve()))]
+
+        root_id = episodic.record_task(
+            goal=agent_run.goal,
+            plan_summary=agent_run.plan.summary(),
+            outcome=outcome,
+            run_id=agent_run.id,
+            report_paths=report_paths,
+        )
+
+        nodes_by_id = {node.id: node for node in agent_run.plan.nodes}
+        for result in results:
+            node = nodes_by_id.get(result.node_id)
+            description = node.description if node else result.node_id
+            tool_name = node.tool_name if node else ""
+            child_outcome = "completed" if result.tool_result.ok else "failed"
+            episodic.record_task(
+                goal=description,
+                plan_summary=tool_name,
+                outcome=child_outcome,
+                parent_task_id=root_id,
+                node_id=result.node_id,
+            )
+        return root_id
+    finally:
+        episodic.close()
 
 
 def record_task_with_semantic(

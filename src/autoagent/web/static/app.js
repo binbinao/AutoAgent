@@ -114,23 +114,72 @@ async function loadConfig() {
   return cfg;
 }
 
+function formatHistoryTime(iso) {
+  return iso.slice(0, 16).replace("T", " ");
+}
+
+function renderHistoryChild(child) {
+  return `<li class="history-node history-node-child" role="treeitem">
+    <div class="history-row">
+      <span class="history-indent" aria-hidden="true"></span>
+      <span class="history-goal" title="${escapeHtml(child.goal)}">${escapeHtml(child.goal.slice(0, 72))}${child.goal.length > 72 ? "…" : ""}</span>
+      <span class="history-meta">${escapeHtml(child.plan_summary)}</span>
+      <span class="status-${escapeHtml(child.outcome)} history-outcome">${escapeHtml(translateOutcome(child.outcome))}</span>
+      <time class="history-time">${escapeHtml(formatHistoryTime(child.created_at))}</time>
+    </div>
+  </li>`;
+}
+
+function renderHistoryRoot(item, expanded) {
+  const reports = item.reports || [];
+  const reportOptions = reports.length
+    ? reports.map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join("")
+    : `<option value="">${escapeHtml(t("history.noReports"))}</option>`;
+  const children = (item.children || []).map(renderHistoryChild).join("");
+  const hasChildren = children.length > 0;
+  return `<div class="history-root" role="treeitem" aria-expanded="${expanded ? "true" : "false"}">
+    <div class="history-row history-row-root">
+      ${hasChildren ? `<button type="button" class="history-toggle" aria-label="${escapeHtml(t("history.toggle"))}" data-expanded="${expanded ? "true" : "false"}">${expanded ? "▾" : "▸"}</button>` : '<span class="history-toggle-spacer" aria-hidden="true"></span>'}
+      <span class="history-goal" title="${escapeHtml(item.goal)}">${escapeHtml(item.goal.slice(0, 72))}${item.goal.length > 72 ? "…" : ""}</span>
+      <span class="status-${escapeHtml(item.outcome)} history-outcome">${escapeHtml(translateOutcome(item.outcome))}</span>
+      <time class="history-time">${escapeHtml(formatHistoryTime(item.created_at))}</time>
+      <select class="history-report-select" ${reports.length ? "" : "disabled"} aria-label="${escapeHtml(t("history.reportSelect"))}">${reportOptions}</select>
+      <button type="button" class="btn btn-ghost btn-sm history-download" ${reports.length ? "" : "disabled"}>${escapeHtml(t("history.download"))}</button>
+    </div>
+    ${hasChildren ? `<ul class="history-children" role="group"${expanded ? "" : " hidden"}>${children}</ul>` : ""}
+  </div>`;
+}
+
 async function loadHistory() {
-  const rows = await api("/api/history?limit=15");
-  const body = $("history-body");
-  if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="4" class="muted">${escapeHtml(t("history.empty"))}</td></tr>`;
+  const { items } = await api("/api/history/tree?limit=15");
+  const container = $("history-tree");
+  if (!items.length) {
+    container.innerHTML = `<p class="muted">${escapeHtml(t("history.empty"))}</p>`;
     return;
   }
-  body.innerHTML = rows
-    .map(
-      (r) => `<tr>
-        <td>${escapeHtml(r.goal.slice(0, 60))}${r.goal.length > 60 ? "…" : ""}</td>
-        <td>${escapeHtml(r.plan_summary.slice(0, 40))}…</td>
-        <td class="status-${escapeHtml(r.outcome)}">${escapeHtml(translateOutcome(r.outcome))}</td>
-        <td>${escapeHtml(r.created_at.slice(0, 16).replace("T", " "))}</td>
-      </tr>`
-    )
-    .join("");
+  container.innerHTML = items.map((item, index) => renderHistoryRoot(item, index === 0)).join("");
+
+  container.querySelectorAll(".history-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const treeItem = btn.closest(".history-root");
+      const group = treeItem?.querySelector(".history-children");
+      const expanded = btn.getAttribute("data-expanded") !== "true";
+      btn.setAttribute("data-expanded", expanded ? "true" : "false");
+      btn.textContent = expanded ? "▾" : "▸";
+      treeItem?.setAttribute("aria-expanded", expanded ? "true" : "false");
+      if (group) group.hidden = !expanded;
+    });
+  });
+
+  container.querySelectorAll(".history-download").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.closest(".history-row-root");
+      const sel = row?.querySelector(".history-report-select");
+      const name = sel?.value;
+      if (!name) return;
+      window.location.href = `/api/reports/${encodeURIComponent(name)}/download`;
+    });
+  });
 }
 
 async function loadReports(selectName) {
