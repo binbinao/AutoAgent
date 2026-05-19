@@ -78,7 +78,12 @@ def format_execution_context(
     sections: list[str] = []
     for node_id in node_ids:
         result = results_by_id.get(node_id)
-        if result is None or not result.ok:
+        if result is None:
+            continue
+        if not result.ok:
+            err = (result.error or "unknown error").strip()
+            if err:
+                sections.append(f"## {node_id} (failed)\n\n{err}")
             continue
         body = format_tool_result_output(result)
         if not body.strip():

@@ -102,6 +102,19 @@ class Plan(BaseModel):
         """Return a new plan with an additional node (dynamic DAG extension)."""
         return Plan(goal=self.goal, nodes=[*self.nodes, node])
 
+    def dependent_ids(self) -> set[str]:
+        """Node ids referenced as dependencies by at least one other node."""
+        out: set[str] = set()
+        for node in self.nodes:
+            out.update(node.dependencies)
+        return out
+
+    def allows_partial_dependencies(self, node: PlanNode) -> bool:
+        """Sink ReAct nodes may run when some dependencies failed but others succeeded."""
+        if node.tool_name is not None:
+            return False
+        return node.id not in self.dependent_ids()
+
     def ready_nodes(
         self,
         *,
@@ -116,9 +129,14 @@ class Plan(BaseModel):
         for node in self.nodes:
             if node.id in terminal:
                 continue
-            if any(dep in blocked for dep in node.dependencies):
+            deps = node.dependencies
+            if self.allows_partial_dependencies(node) and deps:
+                if all(dep in terminal for dep in deps) and any(dep in completed for dep in deps):
+                    ready.append(node)
                 continue
-            if all(dep in completed for dep in node.dependencies):
+            if any(dep in blocked for dep in deps):
+                continue
+            if all(dep in completed for dep in deps):
                 ready.append(node)
         return ready
 
@@ -136,7 +154,14 @@ class Plan(BaseModel):
         for node in self.nodes:
             if node.id in terminal:
                 continue
-            if any(dep in blocked for dep in node.dependencies):
+            deps = node.dependencies
+            if self.allows_partial_dependencies(node) and deps:
+                all_terminal = all(dep in terminal for dep in deps)
+                none_ok = not any(dep in completed for dep in deps)
+                if all_terminal and none_ok:
+                    to_skip.append(node.id)
+                continue
+            if any(dep in blocked for dep in deps):
                 to_skip.append(node.id)
         return to_skip
 

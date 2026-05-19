@@ -43,6 +43,7 @@ class DAGExecutor:
         self.report_synthesizer = report_synthesizer
         self.workspace = Path(workspace or ".")
         self._completed_results: dict[str, ToolResult] = {}
+        self._node_results: dict[str, ToolResult] = {}
         self._plan_goal = ""
 
     def execute(self, plan: Plan) -> list[NodeExecutionResult]:
@@ -50,6 +51,7 @@ class DAGExecutor:
 
     async def execute_async(self, plan: Plan) -> list[NodeExecutionResult]:
         self._completed_results = {}
+        self._node_results = {}
         self._plan_goal = plan.goal
         results: list[NodeExecutionResult] = []
         completed: set[str] = set()
@@ -75,6 +77,7 @@ class DAGExecutor:
                     finished_at=datetime.now(UTC),
                 )
                 results.append(skipped_result)
+                self._record_node_result(node_id, skipped_result.tool_result)
                 self._notify_node_finished(current_plan, skipped_result)
 
             ready = current_plan.ready_nodes(
@@ -94,9 +97,9 @@ class DAGExecutor:
                     finished_at=datetime.now(UTC),
                 )
                 results.append(node_result)
+                self._record_node_result(node.id, tool_result)
                 if tool_result.ok:
                     completed.add(node.id)
-                    self._completed_results[node.id] = tool_result
                 else:
                     failed.add(node.id)
                 current_plan = self._notify_node_finished(current_plan, node_result)
@@ -143,10 +146,15 @@ class DAGExecutor:
             error=f"Failed after {node.max_retries + 1} attempt(s): {last_error}",
         )
 
+    def _record_node_result(self, node_id: str, tool_result: ToolResult) -> None:
+        self._node_results[node_id] = tool_result
+        if tool_result.ok:
+            self._completed_results[node_id] = tool_result
+
     def _react_memory_context(self, node: PlanNode) -> str:
         if not node.dependencies:
             return ""
-        return format_execution_context(self._completed_results, node.dependencies)
+        return format_execution_context(self._node_results, node.dependencies)
 
     def _execute_node(self, node: PlanNode) -> ToolResult:
         if node.tool_name is None:

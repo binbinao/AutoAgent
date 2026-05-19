@@ -15,6 +15,17 @@ from autoagent.tools import EchoTool, ToolRegistry
 from autoagent.tools.file_tools import FileWriteTool
 
 
+def test_format_execution_context_includes_failed_dependency_summary() -> None:
+    results = {
+        "fetch_ok": ToolResult(ok=True, output={"text": "ok chunk"}),
+        "fetch_bad": ToolResult(ok=False, error="Failed to fetch URL: https://example.com"),
+    }
+    text = format_execution_context(results, ["fetch_ok", "fetch_bad"])
+    assert "ok chunk" in text
+    assert "fetch_bad (failed)" in text
+    assert "Failed to fetch URL" in text
+
+
 def test_format_execution_context_includes_fetch_text() -> None:
     results = {
         "fetch": ToolResult(ok=True, output={"url": "https://x", "text": "Agent patterns"}),
